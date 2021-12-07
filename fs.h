@@ -67,6 +67,11 @@ public:
     // chmod <accessrights> <filepath> changes the access rights for the
     // file <filepath> to <accessrights>.
     int chmod(std::string accessrights, std::string filepath);
+
+
+
+    // Our own functions
+    int file_exists(std::string filename);
 };
 
 #endif // __FS_H__

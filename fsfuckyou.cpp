@@ -50,10 +50,6 @@ FS::format()
 int
 FS::create(std::string filepath)
 {
-    if(file_exists(filepath) != -1){
-      std::cout << "File \"" << filepath << "\" already exists.\n";
-      return 1;
-    }
     std::string accum;
     std::string line;
     for(;;){
@@ -136,9 +132,12 @@ FS::cat(std::string filepath)
     dir_entry *blk = (dir_entry*)malloc(BLOCK_SIZE);
     disk.read(ROOT_BLOCK, (uint8_t*)blk);
 
-    int i = file_exists(filepath);
+    int i;
+    for(i = 0; i < 64; i++)
+        if(std::string(blk[i].file_name) == filepath)
+            break;
 
-    if(i >= BLOCK_SIZE / sizeof(dir_entry)) // File not found
+    if(i >= 64) // File not found
         return 1;
 
     dir_entry e = blk[i];
@@ -176,7 +175,7 @@ FS::ls()
     dir_entry *blk = (dir_entry*)malloc(BLOCK_SIZE);
     disk.read(ROOT_BLOCK, (uint8_t*)blk);
 
-    std::string str = "    Size   File name\n";
+    std::string str = "    Size  File name\n";
     std::cout << str;
 
     for(int i = 0; i < BLOCK_SIZE / sizeof(dir_entry); i++){
@@ -202,86 +201,8 @@ FS::ls()
 int
 FS::cp(std::string sourcepath, std::string destpath)
 {
-    if(file_exists(destpath) != -1){
-      std::cout << "File \"" << destpath << "\" already exists.\n";
-      return 2;
-    }
-    if(file_exists(sourcepath) == -1){
-      std::cout << "File \"" << sourcepath << "\" does not exist.\n";
-      return 2;
-    }
-
     std::cout << "FS::cp(" << sourcepath << "," << destpath << ")\n";
-
-    // Find file in root
-    dir_entry *blk = (dir_entry*)malloc(BLOCK_SIZE);
-    disk.read(ROOT_BLOCK, (uint8_t*)blk);
-
-    int i;
-    for(i = 0; i < BLOCK_SIZE / sizeof(dir_entry); i++)
-        if(std::string(blk[i].file_name) == sourcepath)
-            break;
-
-    if(i >= BLOCK_SIZE / sizeof(dir_entry)) // File not found
-        return 1;
-
-    // Make copy of dir_entry
-    dir_entry file_entry = blk[i];
-    dir_entry *copy_entry;
-
-    for(copy_entry = blk; copy_entry->first_blk > 0 && copy_entry < blk + 64; copy_entry++){}
-
-    for(int i = 0; i < 56; i++)
-      copy_entry->file_name[i] = 0;
-    strcpy(copy_entry->file_name, destpath.c_str());
-    copy_entry->size = file_entry.size;
-    copy_entry->type = file_entry.type;
-    copy_entry->access_rights = file_entry.access_rights;
-
-    // For each block, copy the data to another block
-
-    uint8_t *blk_buf = (uint8_t*)malloc(BLOCK_SIZE);
-
-    int c_blk = file_entry.first_blk;
-    int to_block = -1;
-    while(c_blk != FAT_EOF){
-
-      // Find empty block
-      for(int i = 2; i < 2048; i++){
-          if(fat[i] == FAT_FREE){
-
-              if(to_block == -1){
-                copy_entry->first_blk = i;
-                fat[i] = FAT_EOF;
-              } else {
-                fat[to_block] = i;
-                fat[i] = FAT_EOF;
-              }
-              to_block = i;
-              break;
-          }
-      }
-
-      if(to_block <= 0)
-        return 1;
-      else if(to_block == 1)
-        return 2;
-
-      disk.read(c_blk, blk_buf);
-      disk.write(to_block, blk_buf);
-
-      // Next block
-      c_blk = fat[c_blk];
-    }
-    // Update the copied dir_entry
-    disk.write(ROOT_BLOCK, (uint8_t*)blk);
-    disk.write(FAT_BLOCK, (uint8_t*)fat);
-
-    free(blk);
-    free(blk_buf);
-
-    std::cout << copy_entry->first_blk << "\n";
-   return 0;
+    return 0;
 }
 
 // mv <sourcepath> <destpath> renames the file <sourcepath> to the name <destpath>,
@@ -343,23 +264,4 @@ FS::chmod(std::string accessrights, std::string filepath)
 {
     std::cout << "FS::chmod(" << accessrights << "," << filepath << ")\n";
     return 0;
-}
-
-int
-FS::file_exists(std::string filename)
-{
-  dir_entry *blk = (dir_entry*)malloc(BLOCK_SIZE);
-  disk.read(ROOT_BLOCK, (uint8_t*)blk);
-
-  int i;
-  for(i = 0; i < BLOCK_SIZE / sizeof(dir_entry); i++){
-      if(blk[i].first_blk > 0 && std::string(blk[i].file_name) == filename){
-          break;
-      }
-  }
-  if(i >= BLOCK_SIZE / sizeof(dir_entry))
-    i = -1;
-
-  free(blk);
-  return i;
 }
