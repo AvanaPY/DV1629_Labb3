@@ -1,9 +1,18 @@
 #include <iostream>
 #include "fs.h"
+#include <string>
+#include <cstring>
 
 FS::FS()
 {
     std::cout << "FS::FS()... Creating file system\n";
+    int16_t *blk = (int16_t*)malloc(BLOCK_SIZE);
+    disk.read(FAT_BLOCK, (uint8_t*)blk);
+
+    for(int i = 0; i < BLOCK_SIZE/2; i++)
+        fat[i] = blk[i];
+
+    free(blk);
 }
 
 FS::~FS()
@@ -16,6 +25,22 @@ int
 FS::format()
 {
     std::cout << "FS::format()\n";
+    std::cout << "FAT cleared to all 0s\n";
+    for(int i = 0; i < BLOCK_SIZE/2; i++){
+        fat[i] = FAT_FREE;
+    }
+    fat[0] = FAT_EOF;
+    fat[1] = FAT_EOF;
+
+    uint8_t* blk = (uint8_t*)malloc(BLOCK_SIZE);
+    for(int i = 0; i < BLOCK_SIZE; i++)
+        blk[i] = 0;
+
+    for(int i = 0; i < 2048; i++)
+        disk.write(i, blk);
+
+    disk.write(FAT_BLOCK, (uint8_t*)fat);
+    free(blk);
     return 0;
 }
 
@@ -24,7 +49,70 @@ FS::format()
 int
 FS::create(std::string filepath)
 {
-    std::cout << "FS::create(" << filepath << ")\n";
+    std::string accum;
+    std::string line;
+    for(;;){
+        std::getline(std::cin, line);
+
+        if(line.empty()){
+            break;
+        } else {
+            if(!accum.empty())
+                accum += "\n";
+            accum += line;
+        }
+    }
+
+    // Write data
+    char *c_accum = (char*)accum.c_str();
+    int bytes_to_write = accum.length() + 1;
+    int first_block = -1, block = -1, previous_block = -1;
+    while(bytes_to_write > 0){ // While there's data to write
+        // Find an empty block
+        for(int i = 2; i < 2048; i++){
+            if(fat[i] == FAT_FREE){
+                block = i;
+                break;
+            }
+        }
+        disk.write(block, (uint8_t*)c_accum);
+
+        fat[block] = FAT_EOF;
+        bytes_to_write -= BLOCK_SIZE;
+        c_accum += BLOCK_SIZE;
+
+        if(previous_block > 0)
+            fat[previous_block] = block;
+
+        if(first_block == -1)
+            first_block = block;
+        previous_block = block;
+
+        std::cout << "Bytes left: " << bytes_to_write << "\n";
+    }
+
+    // Update directory data
+    dir_entry *blk = (dir_entry*)malloc(BLOCK_SIZE); 
+    
+    disk.read(ROOT_BLOCK, (uint8_t*)blk);
+
+    dir_entry *e;
+    for(e = blk; e->size != 0 && e < blk + 64; e++){}
+
+    for(int i = 0; i < filepath.size() && i < 56; i++)
+        e->file_name[i] = filepath[i];
+    e->size = (uint32_t)(accum.length() + 1);
+    e->first_blk = first_block;
+    e->type = TYPE_FILE;
+    e->access_rights = READ | WRITE | EXECUTE;
+
+    std::cout << "File length: " << e->size << "\n";
+    std::cout << "From block " << first_block << " to block " << block << "\n";
+
+    disk.write(ROOT_BLOCK, (uint8_t*)blk);
+    disk.write(FAT_BLOCK, (uint8_t*)fat);
+    
+    free(blk);
     return 0;
 }
 
@@ -33,6 +121,32 @@ int
 FS::cat(std::string filepath)
 {
     std::cout << "FS::cat(" << filepath << ")\n";
+
+    dir_entry *blk = (dir_entry*)malloc(BLOCK_SIZE);
+    disk.read(ROOT_BLOCK, (uint8_t*)blk);
+
+    int i;
+    for(i = 0; i < 64; i++)
+        if(std::string(blk[i].file_name) == filepath)
+            break;
+        
+    if(i >= 64) // File not found
+        return 1;
+    
+    dir_entry e = blk[i];
+
+
+    char *cblk = (char*)blk;
+
+    disk.read(e.first_blk, (uint8_t*)cblk);
+
+    std::cout << i << "\n";
+    std::string s = std::string(cblk);
+
+    std::cout << e.file_name << " " << i << "\n";
+    std::cout << s << "\n";
+
+    free(blk);
     return 0;
 }
 
@@ -41,6 +155,28 @@ int
 FS::ls()
 {
     std::cout << "FS::ls()\n";
+
+    dir_entry *blk = (dir_entry*)malloc(BLOCK_SIZE);
+    disk.read(ROOT_BLOCK, (uint8_t*)blk);
+
+    std::string str = "   File name           Size\n";
+    std::cout << str;
+
+    for(int i = 0; i < 64; i++){
+        if(blk[i].first_blk != 0){
+
+            str = std::to_string(i);
+            str.append(3 - str.length(), ' ');
+
+            str.append(blk[i].file_name);
+            str.append(23 - str.length(), ' ');
+
+            str.append(std::to_string(blk[i].size));
+            std::cout << str << "\n";
+        }
+    }
+
+    free(blk);
     return 0;
 }
 
