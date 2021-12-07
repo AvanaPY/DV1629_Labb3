@@ -25,20 +25,21 @@ int
 FS::format()
 {
     std::cout << "FS::format()\n";
-    std::cout << "FAT cleared to all 0s\n";
-    for(int i = 0; i < BLOCK_SIZE/2; i++){
-        fat[i] = FAT_FREE;
-    }
     fat[0] = FAT_EOF;
     fat[1] = FAT_EOF;
+    for(int i = 2; i < BLOCK_SIZE/2; i++){
+        fat[i] = FAT_FREE;
+    }
 
-    uint8_t* blk = (uint8_t*)malloc(BLOCK_SIZE);
-    for(int i = 0; i < BLOCK_SIZE; i++)
-        blk[i] = 0;
+    dir_entry *blk = (dir_entry*)malloc(BLOCK_SIZE);
+    disk.read(ROOT_BLOCK, (uint8_t*)blk);
 
-    for(int i = 0; i < 2048; i++)
-        disk.write(i, blk);
-
+    // Reset all dir_entries in root folder to start on block 0 so they do not show up
+    for(int i = 0; i < BLOCK_SIZE / sizeof(dir_entry); i++){
+        blk[i].first_blk = 0;
+    }
+    
+    disk.write(ROOT_BLOCK, (uint8_t*)blk);
     disk.write(FAT_BLOCK, (uint8_t*)fat);
     free(blk);
     return 0;
@@ -92,12 +93,12 @@ FS::create(std::string filepath)
     }
 
     // Update directory data
-    dir_entry *blk = (dir_entry*)malloc(BLOCK_SIZE); 
-    
+    dir_entry *blk = (dir_entry*)malloc(BLOCK_SIZE);
+
     disk.read(ROOT_BLOCK, (uint8_t*)blk);
 
     dir_entry *e;
-    for(e = blk; e->size != 0 && e < blk + 64; e++){}
+    for(e = blk; e->first_blk > 0 && e < blk + 64; e++){}
 
     for(int i = 0; i < filepath.size() && i < 56; i++)
         e->file_name[i] = filepath[i];
@@ -111,7 +112,7 @@ FS::create(std::string filepath)
 
     disk.write(ROOT_BLOCK, (uint8_t*)blk);
     disk.write(FAT_BLOCK, (uint8_t*)fat);
-    
+
     free(blk);
     return 0;
 }
@@ -129,22 +130,25 @@ FS::cat(std::string filepath)
     for(i = 0; i < 64; i++)
         if(std::string(blk[i].file_name) == filepath)
             break;
-        
+
     if(i >= 64) // File not found
         return 1;
-    
+
     dir_entry e = blk[i];
 
+    std::cout << e.file_name << " " << i << "\n";
 
     char *cblk = (char*)blk;
+    int block = e.first_blk;
+    while(block != FAT_EOF){
 
-    disk.read(e.first_blk, (uint8_t*)cblk);
+        disk.read(block, (uint8_t*)cblk);
+        std::string s = std::string(cblk);
+        block = fat[block];
+        std::cout << s;
+    }
 
-    std::cout << i << "\n";
-    std::string s = std::string(cblk);
-
-    std::cout << e.file_name << " " << i << "\n";
-    std::cout << s << "\n";
+    std::cout << "\n";
 
     free(blk);
     return 0;
@@ -162,7 +166,7 @@ FS::ls()
     std::string str = "   File name           Size\n";
     std::cout << str;
 
-    for(int i = 0; i < 64; i++){
+    for(int i = 0; i < BLOCK_SIZE / sizeof(dir_entry); i++){
         if(blk[i].first_blk != 0){
 
             str = std::to_string(i);
