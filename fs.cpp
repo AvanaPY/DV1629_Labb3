@@ -271,7 +271,6 @@ FS::cp(std::string sourcepath, std::string destpath)
         blk_src = fat[blk_src];
     }
                                   
-
     // Update the copied dir_entry
     disk.write(ROOT_BLOCK, (uint8_t*)blk);
     disk.write(FAT_BLOCK, (uint8_t*)fat);
@@ -284,7 +283,26 @@ FS::cp(std::string sourcepath, std::string destpath)
 int
 FS::mv(std::string sourcepath, std::string destpath)
 {
-    std::cout << "FS::mv(" << sourcepath << "," << destpath << ")\n";
+    if(destpath.length() >= 55){ // 56 - 1
+        std::cout << "Filename too long. The name of a file can be at most be 56 characters long\n";
+        return 1;
+    }
+    int file_index = file_exists(sourcepath);
+
+    if(file_index == -1){
+        std::cout << "File does not exist.\n";
+        return 1;
+    }
+
+    dir_entry blk[BLOCK_SIZE];
+    disk.read(ROOT_BLOCK, (uint8_t*)blk);
+
+    dir_entry *file_entry = blk + file_index;
+    std::strcpy(file_entry->file_name, destpath.c_str());
+
+    disk.write(ROOT_BLOCK, (uint8_t*)blk);
+
+    std::cout << "Successfully renamed " << sourcepath << " to " << file_entry->file_name << "\n";
     return 0;
 }
 
