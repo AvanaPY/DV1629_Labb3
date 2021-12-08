@@ -6,13 +6,11 @@
 FS::FS()
 {
     std::cout << "FS::FS()... Creating file system\n";
-    int16_t *blk = (int16_t*)malloc(BLOCK_SIZE);
+    int16_t blk[BLOCK_SIZE];
     disk.read(FAT_BLOCK, (uint8_t*)blk);
 
     for(int i = 0; i < BLOCK_SIZE/2; i++)
         fat[i] = blk[i];
-
-    free(blk);
 }
 
 FS::~FS()
@@ -31,7 +29,7 @@ FS::format()
         fat[i] = FAT_FREE;
     }
 
-    dir_entry *blk = (dir_entry*)malloc(BLOCK_SIZE);
+    dir_entry blk[BLOCK_SIZE];
     disk.read(ROOT_BLOCK, (uint8_t*)blk);
 
     // Reset all dir_entries in root folder to start on block 0 so they do not show up
@@ -41,7 +39,6 @@ FS::format()
 
     disk.write(ROOT_BLOCK, (uint8_t*)blk);
     disk.write(FAT_BLOCK, (uint8_t*)fat);
-    free(blk);
     return 0;
 }
 
@@ -97,7 +94,7 @@ FS::create(std::string filepath)
     }
 
     // Update directory data
-    dir_entry *blk = (dir_entry*)malloc(BLOCK_SIZE);
+    dir_entry blk[BLOCK_SIZE];
 
     disk.read(ROOT_BLOCK, (uint8_t*)blk);
 
@@ -123,7 +120,6 @@ FS::create(std::string filepath)
     disk.write(ROOT_BLOCK, (uint8_t*)blk);
     disk.write(FAT_BLOCK, (uint8_t*)fat);
 
-    free(blk);
     return 0;
 }
 
@@ -133,7 +129,7 @@ FS::cat(std::string filepath)
 {
     std::cout << "FS::cat(" << filepath << ")\n";
 
-    dir_entry *blk = (dir_entry*)malloc(BLOCK_SIZE);
+    dir_entry blk[BLOCK_SIZE];
     disk.read(ROOT_BLOCK, (uint8_t*)blk);
 
     int i = file_exists(filepath);
@@ -154,10 +150,8 @@ FS::cat(std::string filepath)
         block = fat[block];
         std::cout << s;
     }
-
     std::cout << "\n";
 
-    free(blk);
     return 0;
 }
 
@@ -173,7 +167,7 @@ FS::ls()
     }
     std::cout << "\n";
 
-    dir_entry *blk = (dir_entry*)malloc(BLOCK_SIZE);
+    dir_entry blk[BLOCK_SIZE];
     disk.read(ROOT_BLOCK, (uint8_t*)blk);
 
     std::string str = "    Size   File name\n";
@@ -186,14 +180,13 @@ FS::ls()
             str.append(4 - str.length(), ' ');
 
             str.append(std::to_string(blk[i].size));
-            str.append(5, ' ');
+            str.append(11 - str.length(), ' ');
 
             str.append(blk[i].file_name);
             std::cout << str << "\n";
         }
     }
 
-    free(blk);
     return 0;
 }
 
@@ -214,7 +207,7 @@ FS::cp(std::string sourcepath, std::string destpath)
     std::cout << "FS::cp(" << sourcepath << "," << destpath << ")\n";
 
     // Find file in root
-    dir_entry *blk = (dir_entry*)malloc(BLOCK_SIZE);
+    dir_entry blk[BLOCK_SIZE];
     disk.read(ROOT_BLOCK, (uint8_t*)blk);
 
     int i;
@@ -240,7 +233,7 @@ FS::cp(std::string sourcepath, std::string destpath)
 
     // For each block, copy the data to another block
 
-    uint8_t *blk_buf = (uint8_t*)malloc(BLOCK_SIZE);
+    uint8_t blk_buf[BLOCK_SIZE];
 
     int c_blk = file_entry.first_blk;
     int to_block = -1;
@@ -276,10 +269,6 @@ FS::cp(std::string sourcepath, std::string destpath)
     // Update the copied dir_entry
     disk.write(ROOT_BLOCK, (uint8_t*)blk);
     disk.write(FAT_BLOCK, (uint8_t*)fat);
-
-    free(blk);
-    free(blk_buf);
-
     std::cout << copy_entry->first_blk << "\n";
    return 0;
 }
@@ -348,7 +337,7 @@ FS::chmod(std::string accessrights, std::string filepath)
 int
 FS::file_exists(std::string filename)
 {
-  dir_entry *blk = (dir_entry*)malloc(BLOCK_SIZE);
+  dir_entry blk[BLOCK_SIZE];
   disk.read(ROOT_BLOCK, (uint8_t*)blk);
 
   int i;
@@ -359,7 +348,5 @@ FS::file_exists(std::string filename)
   }
   if(i >= BLOCK_SIZE / sizeof(dir_entry))
     i = -1;
-
-  free(blk);
   return i;
 }
