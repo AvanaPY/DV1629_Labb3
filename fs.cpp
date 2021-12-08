@@ -48,10 +48,15 @@ FS::format()
 int
 FS::create(std::string filepath)
 {
+    if(filepath.length() > 55){ // 56 - 1, -1 because string::length() does not take the \0 into account
+        std::cout << "Filename too long. The name of a file can be at most be 56 characters long\n";
+        return 1;
+    }
     if(file_exists(filepath) != -1){
       std::cout << "File \"" << filepath << "\" already exists.\n";
       return 1;
     }
+
     std::string accum;
     std::string line;
     for(;;){
@@ -115,7 +120,6 @@ FS::create(std::string filepath)
     e->first_blk = first_block;
     e->type = TYPE_FILE;
     e->access_rights = READ | WRITE | EXECUTE;
-
 
     disk.write(ROOT_BLOCK, (uint8_t*)blk);
     disk.write(FAT_BLOCK, (uint8_t*)fat);
