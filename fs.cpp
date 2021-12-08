@@ -178,23 +178,38 @@ FS::ls()
 
     }
     std::cout << "\n";
-    //
 
     dir_entry *blk = read_current_directory();
 
-    std::string str = "    Size    File name\n";
-    std::cout << str;
-
+    std::string str;
+    std::cout << "    Type    Size    Name\n";
     for(int i = 0; i < BLOCK_SIZE / sizeof(dir_entry); i++){
-        if(blk[i].first_blk != 0){
+        if(blk[i].type == TYPE_DIR){
 
             str = std::to_string(i);
             str.append(4 - str.length(), ' ');
 
-            str.append(std::to_string(blk[i].size));
+            str.append("Dir");
             str.append(12 - str.length(), ' ');
 
+            str.append("-");
+
+            str.append(20 - str.length(), ' ');
             str.append(blk[i].file_name);
+
+            std::cout << str << "\n";
+        } else if(blk[i].type == TYPE_FILE) {
+            str = std::to_string(i);
+            str.append(4 - str.length(), ' ');
+
+            str.append("File");
+            str.append(12 - str.length(), ' ');
+
+            str.append(std::to_string(blk[i].size));
+
+            str.append(20 - str.length(), ' ');
+            str.append(blk[i].file_name);
+
             std::cout << str << "\n";
         }
     }
