@@ -73,6 +73,7 @@ public:
     // Our own functions
     int file_exists(std::string filename);
     int find_empty_dir_entry_id(dir_entry* entries);
+    int find_empty_block_id();
 };
 
 #endif // __FS_H__

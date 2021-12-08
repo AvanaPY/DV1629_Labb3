@@ -5,7 +5,7 @@
 #define __DISK_H__
 
 #define DISKNAME "diskfile.bin"
-#define BLOCK_SIZE 128
+#define BLOCK_SIZE 256
 #define DEBUG false
 
 class Disk {

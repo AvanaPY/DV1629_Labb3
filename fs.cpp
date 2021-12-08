@@ -79,13 +79,10 @@ FS::create(std::string filepath)
     int bytes_to_write = accum.length() + 1;
     int first_block = -1, block = -1, previous_block = -1;
     while(bytes_to_write > 0){ // While there's data to write
+
         // Find an empty block
-        for(int i = 2; i < 2048; i++){
-            if(fat[i] == FAT_FREE){
-                block = i;
-                break;
-            }
-        }
+        block = find_empty_block_id();
+
         disk.write(block, (uint8_t*)c_accum);
 
         fat[block] = FAT_EOF;
@@ -166,7 +163,7 @@ int
 FS::ls()
 {
 
-    int block_to_write = 8;
+    int block_to_write = 6;
     std::cout << "Writing contents in block " << block_to_write << "...\n";
     uint8_t blk6[BLOCK_SIZE];
     disk.read(block_to_write, blk6);
@@ -223,11 +220,12 @@ FS::cp(std::string sourcepath, std::string destpath)
 {
     if(file_exists(destpath) != -1){
       std::cout << "File \"" << destpath << "\" already exists.\n";
-      return 2;
+      return 1;
     }
-    if(file_exists(sourcepath) == -1){
+    int source_file_id = file_exists(sourcepath);
+    if(source_file_id == -1){
       std::cout << "File \"" << sourcepath << "\" does not exist.\n";
-      return 2;
+      return 1;
     }
 
     std::cout << "FS::cp(" << sourcepath << "," << destpath << ")\n";
@@ -236,19 +234,10 @@ FS::cp(std::string sourcepath, std::string destpath)
     dir_entry blk[BLOCK_SIZE];
     disk.read(ROOT_BLOCK, (uint8_t*)blk);
 
-    int i;
-    for(i = 0; i < BLOCK_SIZE / sizeof(dir_entry); i++)
-        if(std::string(blk[i].file_name) == sourcepath)
-            break;
-
-    if(i >= BLOCK_SIZE / sizeof(dir_entry)) // File not found
-        return 1;
-
     // Make copy of dir_entry
-    dir_entry file_entry = blk[i];
+    dir_entry file_entry = blk[source_file_id];
 
     int free_entry_id = find_empty_dir_entry_id(blk);
-
 
     if(free_entry_id == -1){
         std::cout << "No free space in directory to copy file." << "\n";
@@ -272,24 +261,22 @@ FS::cp(std::string sourcepath, std::string destpath)
 
     // TODO: Perhaps count the number of blocks required and make sure that there's enough space on the disk before we start copying the file
 
+    int blk_empty;
     while(blk_src != FAT_EOF) { // While we have not reached EOF
         // Find empty block
-        for(int i = 2; i < 2048; i++){
-            if(fat[i] == FAT_FREE){
-                if(blk_dest == -1){
-                    copy_entry->first_blk = i;
-                    fat[i] = FAT_EOF;
-                } else {
-                    fat[blk_dest] = i;
-                    fat[i] = FAT_EOF;
-                }
-                blk_dest = i;
-                break;
-            }
-        } // -- for
+        blk_empty = find_empty_block_id();
 
-        if(blk_dest <= 1) // This should never happen but who knows
+        fat[blk_empty] = FAT_EOF;
+        if(blk_dest == -1)
+            copy_entry->first_blk = blk_empty;
+        else 
+            fat[blk_dest] = blk_empty;
+        blk_dest = blk_empty;
+
+        if(blk_dest <= 1) { // This should never happen but who know
+            std::cout << "Unaccounted-for error: blk_dest <= 1 (" << blk_dest << ")\n";
             return 1;
+        }
 
         // Copy the file contents by reading a block into our buffer and then writing our buffer to another block
         disk.read(blk_src, blk_buf);
@@ -319,21 +306,22 @@ FS::mv(std::string sourcepath, std::string destpath)
       std::cout << "File \"" << destpath << "\" already exists.\n";
       return 1;
     }
+    // Make sure the file exists
     int file_index = file_exists(sourcepath);
-
     if(file_index == -1){
         std::cout << "File does not exist.\n";
         return 1;
     }
 
+    // Load the root directory
     dir_entry blk[BLOCK_SIZE];
     disk.read(ROOT_BLOCK, (uint8_t*)blk);
 
+    // Copy the new name into the file's dir_entry
     dir_entry *file_entry = blk + file_index;
     std::strcpy(file_entry->file_name, destpath.c_str());
 
     disk.write(ROOT_BLOCK, (uint8_t*)blk);
-
     std::cout << "Successfully renamed " << sourcepath << " to " << file_entry->file_name << "\n";
     return 0;
 }
@@ -342,33 +330,29 @@ FS::mv(std::string sourcepath, std::string destpath)
 int
 FS::rm(std::string filepath)
 {
+    // Make sure the file exists
     int file_index = file_exists(filepath);
-
     if(file_index == -1){
         std::cout << "File does not exist.\n";
         return 1;
     }
     
+    // Load the root directory
     dir_entry blk[BLOCK_SIZE];
     disk.read(ROOT_BLOCK, (uint8_t*)blk);
     
+    // Grab a pointer to the file's dir_entry
     dir_entry *file_entry = blk + file_index;
 
-    for(int i = 0; i < 10; i++)
-        std::cout << fat[i] << ", ";
-    std::cout << "\n";
-
+    // Iterate through all the blocks taken up by the file and mark them as free
     int blk_rm = file_entry->first_blk, tmp = 0;
     while(blk_rm != FAT_EOF){
         tmp = blk_rm;
-        blk_rm = fat[blk_rm];
-        fat[tmp] = FAT_FREE;
+        blk_rm = fat[blk_rm];       // Next block
+        fat[tmp] = FAT_FREE;    
     }
 
-    for(int i = 0; i < 10; i++)
-        std::cout << fat[i] << ", ";
-    std::cout << "\n";
-
+    // Set first block to 0 to indicate this dir_entry is not used
     file_entry->first_blk = 0;
 
     disk.write(ROOT_BLOCK, (uint8_t*)blk);
@@ -383,6 +367,7 @@ FS::rm(std::string filepath)
 int
 FS::append(std::string filepath1, std::string filepath2)
 {
+    // Make sure both files exists
     int file_1_id = file_exists(filepath1);
     int file_2_id = file_exists(filepath2);
 
@@ -394,93 +379,80 @@ FS::append(std::string filepath1, std::string filepath2)
         std::cout << "File " << filepath2 << " does not exist\n";
         return 1;
     }
-    // Find the files in the file system
+
+    // Load the root directory 
     dir_entry blk[BLOCK_SIZE];
     disk.read(ROOT_BLOCK, (uint8_t*)blk);
 
     dir_entry *entry_from = blk + file_1_id;
     dir_entry *entry_to = blk + file_2_id;
 
-    int blk_from = entry_from->first_blk;
-    int blk_to = entry_to->first_blk;
+    int blk_from = entry_from->first_blk;       // The block we're reading from
+    int blk_to = entry_to->first_blk;           // The block we're writing to
+    while(fat[blk_to] != FAT_EOF){ blk_to = fat[blk_to]; } // Set the writing-to-block block to the last block of the file we're writing to
 
-    // Prepare a buffer
-    uint8_t buf[BLOCK_SIZE * 2]; // Buffer for our files
+    // Prepare some variables
+    uint8_t buf[BLOCK_SIZE * 2];                                             // Buffer for our files
+    int bytes_to_append = entry_from->size + entry_to->size % BLOCK_SIZE;    // Keeps track of how much data is left to write
+    int buf_end_pos = 0;                                                     // End position in our data
 
-    // Read in "last" part of the file we're appending to
-    while(fat[blk_to] != FAT_EOF){ blk_to = fat[blk_to]; } // Find the last non-eof block of f1
-
-    int bytes_to_append = entry_from->size + entry_to->size % BLOCK_SIZE;
-    int bytes_written = 0;
-    int buf_start_pos = 0;
-    int buf_end_pos = 0;
-
-    // Read in last block in file we're appending to
+    // Prepare buffer with the data in the last block of the file we're appending to
     disk.read(blk_to, buf);
     buf_end_pos = (entry_to->size % BLOCK_SIZE) - 1; 
 
-    // Read in first block we're appending from
+    // ... as well as the data in the first block of the file we're appending
     disk.read(blk_from, buf + buf_end_pos);
 
-    // Increase the end of the buffer position by the size of the first block in f2
+    std::cout << "Initial blk_to: " << blk_to << " with table entry " << fat[blk_to] << "\n";
+
+    // Increment the end of the buffer position by the size of the first block in f2
     if(bytes_to_append > BLOCK_SIZE){
         buf_end_pos += BLOCK_SIZE;
     } else{
         buf_end_pos += bytes_to_append;
     }
-    while(bytes_to_append > 0){ // While there's data to write
-        if(buf_end_pos >= BLOCK_SIZE){
-            disk.write(blk_to, buf);
-            fat[blk_to] = FAT_EOF;
 
-            // Shift data in buffer
+    while(bytes_to_append > 0){             // While there's data to write
+        if(buf_end_pos >= BLOCK_SIZE){
+            disk.write(blk_to, buf);        // Write the data to the block
+            fat[blk_to] = FAT_EOF;          // ... and mark the FAT entry as EOF
+
+            // Shift data in buffer to the start
             for(int i = 0; i < BLOCK_SIZE; i++){
                 buf[i] = buf[BLOCK_SIZE + i];
             }
             buf_end_pos -= BLOCK_SIZE;
             bytes_to_append -= BLOCK_SIZE;
 
-            // Read in new data from the next block
+            // Read in new data from the next block unless we reached EOF
             blk_from = fat[blk_from];
             if(blk_from != FAT_EOF){
-
                 disk.read(blk_from, buf + buf_end_pos);
-                if(fat[blk_from] == FAT_EOF){ // If the newly-read block is last block before EOF
-                    buf_end_pos += (entry_from->size % BLOCK_SIZE);
-                } else{
-                    buf_end_pos += BLOCK_SIZE;
-                }
-                
-                // Decide the next block to write to
-                for(int i = 2; i < 2048; i++){
-                    if(fat[i] == FAT_FREE){
-                        fat[blk_to] = i;
-                        blk_to = i;
-                        break;
-                    }
-                }
-            }
-        } else {
-            // Decide the next block to write to
-            for(int i = 2; i < 2048; i++){
-                if(fat[i] == FAT_FREE){
-                    fat[blk_to] = i;
-                    blk_to = i;
-                    break;
-                }
-            }
 
+                // Increment buf_end_pos with size of block data
+                if(fat[blk_from] == FAT_EOF)                             
+                    buf_end_pos += (entry_from->size % BLOCK_SIZE);
+                else
+                    buf_end_pos += BLOCK_SIZE;
+                
+            }
+            // Find an empty block and mark the FAT table to point correctly
+            int blk_new = find_empty_block_id();
+            fat[blk_to] = blk_new;
+            blk_to = blk_new;
+        } else {
             disk.write(blk_to, buf);
             buf_end_pos = 0;
             bytes_to_append = 0;
         }
         
     }
-    fat[blk_to] = FAT_EOF;
+    fat[blk_to] = FAT_EOF;  // Finally mark the end of file
+
     entry_to->size += entry_from->size - 1;
+
     disk.write(ROOT_BLOCK, (uint8_t*)blk);
     disk.write(FAT_BLOCK, (uint8_t*)fat);
-
 
     std::cout << "Successfully appended " << entry_from->file_name << " to the end of " << entry_to->file_name << "\n";
     return 0;
@@ -543,6 +515,15 @@ int
 FS::find_empty_dir_entry_id(dir_entry* entries){
     for(int i = 0; i < BLOCK_SIZE / sizeof(dir_entry); i++){
         if(entries[i].first_blk == 0)
+            return i;
+    }
+    return -1;
+}
+
+int 
+FS::find_empty_block_id(){
+    for(int i = 2; i < 2048; i++){
+        if(fat[i] == FAT_FREE)
             return i;
     }
     return -1;
