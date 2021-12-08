@@ -222,8 +222,6 @@ FS::cp(std::string sourcepath, std::string destpath)
       return 1;
     }
 
-    std::cout << "FS::cp(" << sourcepath << "," << destpath << ")\n";
-
     // Find file in root
     dir_entry blk[BLOCK_SIZE];
     disk.read(ROOT_BLOCK, (uint8_t*)blk);
@@ -268,7 +266,7 @@ FS::cp(std::string sourcepath, std::string destpath)
         blk_dest = blk_empty;
 
         if(blk_dest <= 1) { // This should never happen but who know
-            std::cout << "Unaccounted-for error: blk_dest <= 1 (" << blk_dest << ")\n";
+            std::cout << "Unaccounted-for error: blk_dest <= 1 (" << blk_dest << "). This may indicate that there's no more space on the disk.\n";
             return 1;
         }
 
@@ -363,12 +361,11 @@ FS::append(std::string filepath1, std::string filepath2)
 {
     // Make sure both files exists
     int file_1_id = file_exists(filepath1);
-    int file_2_id = file_exists(filepath2);
-
     if(file_1_id == -1){
         std::cout << "File " << filepath1 << " does not exist\n";
         return 1;
     }
+    int file_2_id = file_exists(filepath2);
     if(file_2_id == -1){
         std::cout << "File " << filepath2 << " does not exist\n";
         return 1;
@@ -386,13 +383,14 @@ FS::append(std::string filepath1, std::string filepath2)
     while(fat[blk_to] != FAT_EOF){ blk_to = fat[blk_to]; } // Set the writing-to-block block to the last block of the file we're writing to
 
     // Prepare some variables
-    uint8_t buf[BLOCK_SIZE * 2];                                                   // Buffer for our files
-    int bytes_to_append = entry_from->size + (entry_to->size % BLOCK_SIZE) - 1;    // Keeps track of how much data is left to write
-    int buf_end_pos = 0;                                                           // End position in our data
+    uint8_t buf[BLOCK_SIZE * 2];                                                    // Buffer for our files
+    int bytes_to_append = entry_from->size + (entry_to->size % BLOCK_SIZE);         // Keeps track of how much data is left to write
+    int buf_end_pos = 0;                                                            // End position in our data
 
     // Prepare buffer with the data in the last block of the file we're appending to
     disk.read(blk_to, buf);
-    buf_end_pos = (entry_to->size % BLOCK_SIZE) - 1; 
+    buf_end_pos = (entry_to->size % BLOCK_SIZE);
+    buf[buf_end_pos-1] = '\n';
 
     // ... as well as the data in the first block of the file we're appending
     disk.read(blk_from, buf + buf_end_pos);
@@ -440,7 +438,7 @@ FS::append(std::string filepath1, std::string filepath2)
     }
     fat[blk_to] = FAT_EOF;  // Finally mark the end of file
 
-    entry_to->size += entry_from->size - 1;
+    entry_to->size += entry_from->size; 
 
     disk.write(ROOT_BLOCK, (uint8_t*)blk);
     disk.write(FAT_BLOCK, (uint8_t*)fat);
