@@ -163,13 +163,7 @@ int
 FS::ls()
 {
 
-    int block_to_write = 6;
-    std::cout << "Writing contents in block " << block_to_write << "...\n";
-    uint8_t blk6[BLOCK_SIZE];
-    disk.read(block_to_write, blk6);
-    std::cout << blk6 << "\n\n\n";
-
-    // TEMPORARY
+    // // TEMPORARY WRITE OUT FAT STATUS
     for(int i = 0; i < 16; i++){
         std::string s = std::to_string(i);
 
@@ -392,9 +386,9 @@ FS::append(std::string filepath1, std::string filepath2)
     while(fat[blk_to] != FAT_EOF){ blk_to = fat[blk_to]; } // Set the writing-to-block block to the last block of the file we're writing to
 
     // Prepare some variables
-    uint8_t buf[BLOCK_SIZE * 2];                                             // Buffer for our files
-    int bytes_to_append = entry_from->size + entry_to->size % BLOCK_SIZE;    // Keeps track of how much data is left to write
-    int buf_end_pos = 0;                                                     // End position in our data
+    uint8_t buf[BLOCK_SIZE * 2];                                                   // Buffer for our files
+    int bytes_to_append = entry_from->size + (entry_to->size % BLOCK_SIZE) - 1;    // Keeps track of how much data is left to write
+    int buf_end_pos = 0;                                                           // End position in our data
 
     // Prepare buffer with the data in the last block of the file we're appending to
     disk.read(blk_to, buf);
@@ -403,16 +397,15 @@ FS::append(std::string filepath1, std::string filepath2)
     // ... as well as the data in the first block of the file we're appending
     disk.read(blk_from, buf + buf_end_pos);
 
-    std::cout << "Initial blk_to: " << blk_to << " with table entry " << fat[blk_to] << "\n";
-
     // Increment the end of the buffer position by the size of the first block in f2
     if(bytes_to_append > BLOCK_SIZE){
         buf_end_pos += BLOCK_SIZE;
     } else{
-        buf_end_pos += bytes_to_append;
+        buf_end_pos += (entry_to->size % BLOCK_SIZE);
     }
 
     while(bytes_to_append > 0){             // While there's data to write
+        std::cout << "Start of loop..." << bytes_to_append << " | " << buf_end_pos << "\n";
         if(buf_end_pos >= BLOCK_SIZE){
             disk.write(blk_to, buf);        // Write the data to the block
             fat[blk_to] = FAT_EOF;          // ... and mark the FAT entry as EOF
@@ -442,8 +435,8 @@ FS::append(std::string filepath1, std::string filepath2)
             blk_to = blk_new;
         } else {
             disk.write(blk_to, buf);
+            bytes_to_append = 0;
         }
-        
     }
     fat[blk_to] = FAT_EOF;  // Finally mark the end of file
 
