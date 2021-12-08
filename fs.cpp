@@ -443,13 +443,27 @@ FS::append(std::string filepath1, std::string filepath2)
 int
 FS::mkdir(std::string dirpath)
 {
-    std::cout << "FS::mkdir(" << dirpath << ")\n";
-
     // Load the current directory directory
     dir_entry *blk = read_current_directory();
 
+    int entry_id = find_empty_dir_entry_id(blk);
 
-    std::cout << "Successfully created directory " << dirpath << "\n";
+    if(entry_id == -1){
+        std::cout << "Could not create directory; No free blocks available.\n";
+        return 1;
+    }
+
+    std::cout << "Found free entry at id " << entry_id << "\n";
+
+    dir_entry *entry = blk + entry_id;
+
+    strcpy(entry->file_name, dirpath.c_str());
+    entry->size = 0;
+    entry->first_blk = 7;
+    entry->type = TYPE_DIR;
+    entry->access_rights = WRITE | READ | EXECUTE;
+    disk.write(current_directory_block(), (uint8_t*)blk);
+    std::cout << "Successfully created directory " << blk[entry_id].file_name << "\n";
     return 0;
 }
 
@@ -513,9 +527,14 @@ FS::find_empty_block_id(){
     return -1;
 }
 
+int
+FS::current_directory_block(){
+    return ROOT_BLOCK;
+}
+
 dir_entry*
 FS::read_current_directory(){
     static dir_entry blk[BLOCK_SIZE];
-    disk.read(ROOT_BLOCK, (uint8_t*)blk);
+    disk.read(current_directory_block(), (uint8_t*)blk);
     return blk;
 }
