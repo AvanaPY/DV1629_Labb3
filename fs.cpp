@@ -310,7 +310,39 @@ FS::mv(std::string sourcepath, std::string destpath)
 int
 FS::rm(std::string filepath)
 {
-    std::cout << "FS::rm(" << filepath << ")\n";
+    int file_index = file_exists(filepath);
+
+    if(file_index == -1){
+        std::cout << "File does not exist.\n";
+        return 1;
+    }
+    
+    dir_entry blk[BLOCK_SIZE];
+    disk.read(ROOT_BLOCK, (uint8_t*)blk);
+    
+    dir_entry *file_entry = blk + file_index;
+
+    for(int i = 0; i < 10; i++)
+        std::cout << fat[i] << ", ";
+    std::cout << "\n";
+
+    int blk_rm = file_entry->first_blk, tmp = 0;
+    while(blk_rm != FAT_EOF){
+        tmp = blk_rm;
+        blk_rm = fat[blk_rm];
+        fat[tmp] = FAT_FREE;
+    }
+
+    for(int i = 0; i < 10; i++)
+        std::cout << fat[i] << ", ";
+    std::cout << "\n";
+
+    file_entry->first_blk = 0;
+
+    disk.write(ROOT_BLOCK, (uint8_t*)blk);
+    disk.write(FAT_BLOCK, (uint8_t*)fat);
+
+    std::cout << "Successfully removed file " << filepath << "\n";
     return 0;
 }
 
