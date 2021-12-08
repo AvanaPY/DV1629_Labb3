@@ -418,15 +418,15 @@ FS::append(std::string filepath1, std::string filepath2)
             fat[blk_to] = FAT_EOF;          // ... and mark the FAT entry as EOF
 
             // Shift data in buffer to the start
-            for(int i = 0; i < BLOCK_SIZE; i++){
+            // It would be more efficient to not do this but this works, might update in the future
+            // TODO: Improve 
+            for(int i = 0; i < BLOCK_SIZE; i++)
                 buf[i] = buf[BLOCK_SIZE + i];
-            }
             buf_end_pos -= BLOCK_SIZE;
             bytes_to_append -= BLOCK_SIZE;
 
-            // Read in new data from the next block unless we reached EOF
             blk_from = fat[blk_from];
-            if(blk_from != FAT_EOF){
+            if(blk_from != FAT_EOF){  // Read in new data from the next block unless we reached EOF
                 disk.read(blk_from, buf + buf_end_pos);
 
                 // Increment buf_end_pos with size of block data
@@ -442,8 +442,6 @@ FS::append(std::string filepath1, std::string filepath2)
             blk_to = blk_new;
         } else {
             disk.write(blk_to, buf);
-            buf_end_pos = 0;
-            bytes_to_append = 0;
         }
         
     }
