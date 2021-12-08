@@ -165,6 +165,34 @@ FS::cat(std::string filepath)
 int
 FS::ls()
 {
+
+    int block_to_write = 8;
+    std::cout << "Writing contents in block " << block_to_write << "...\n";
+    uint8_t blk6[BLOCK_SIZE];
+    disk.read(block_to_write, blk6);
+    std::cout << blk6 << "\n\n\n";
+
+    // TEMPORARY
+    for(int i = 0; i < 16; i++){
+        std::string s = std::to_string(i);
+
+        s.append(4 - s.length(), ' ');
+
+        std::cout << s.c_str();
+
+    }
+    std::cout << "\n";
+    for(int i = 0; i < 16; i++){
+        std::string s = std::to_string(fat[i]);
+
+        s.append(4 - s.length(), ' ');
+
+        std::cout << s.c_str();
+
+    }
+    std::cout << "\n";
+    //
+
     dir_entry blk[BLOCK_SIZE];
     disk.read(ROOT_BLOCK, (uint8_t*)blk);
 
@@ -351,7 +379,106 @@ FS::rm(std::string filepath)
 int
 FS::append(std::string filepath1, std::string filepath2)
 {
-    std::cout << "FS::append(" << filepath1 << "," << filepath2 << ")\n";
+    int file_1_id = file_exists(filepath1);
+    int file_2_id = file_exists(filepath2);
+
+    if(file_1_id == -1){
+        std::cout << "File " << filepath1 << " does not exist\n";
+        return 1;
+    }
+    if(file_2_id == -1){
+        std::cout << "File " << filepath2 << " does not exist\n";
+        return 1;
+    }
+    // Find the files in the file system
+    dir_entry blk[BLOCK_SIZE];
+    disk.read(ROOT_BLOCK, (uint8_t*)blk);
+
+    dir_entry *entry_from = blk + file_1_id;
+    dir_entry *entry_to = blk + file_2_id;
+
+    int blk_from = entry_from->first_blk;
+    int blk_to = entry_to->first_blk;
+
+    // Prepare a buffer
+    uint8_t buf[BLOCK_SIZE * 2]; // Buffer for our files
+
+    // Read in "last" part of the file we're appending to
+    while(fat[blk_to] != FAT_EOF){ blk_to = fat[blk_to]; } // Find the last non-eof block of f1
+
+    int bytes_to_append = entry_from->size + entry_to->size % BLOCK_SIZE;
+    int bytes_written = 0;
+    int buf_start_pos = 0;
+    int buf_end_pos = 0;
+
+    // Read in last block in file we're appending to
+    disk.read(blk_to, buf);
+    buf_end_pos = (entry_to->size % BLOCK_SIZE) - 1; 
+
+    // Read in first block we're appending from
+    disk.read(blk_from, buf + buf_end_pos);
+
+    // Increase the end of the buffer position by the size of the first block in f2
+    if(bytes_to_append > BLOCK_SIZE){
+        buf_end_pos += BLOCK_SIZE;
+    } else{
+        buf_end_pos += bytes_to_append;
+    }
+    while(bytes_to_append > 0){ // While there's data to write
+        if(buf_end_pos >= BLOCK_SIZE){
+            disk.write(blk_to, buf);
+            fat[blk_to] = FAT_EOF;
+
+            // Shift data in buffer
+            for(int i = 0; i < BLOCK_SIZE; i++){
+                buf[i] = buf[BLOCK_SIZE + i];
+            }
+            buf_end_pos -= BLOCK_SIZE;
+            bytes_to_append -= BLOCK_SIZE;
+
+            // Read in new data from the next block
+            blk_from = fat[blk_from];
+            if(blk_from != FAT_EOF){
+
+                disk.read(blk_from, buf + buf_end_pos);
+                if(fat[blk_from] == FAT_EOF){ // If the newly-read block is last block before EOF
+                    buf_end_pos += (entry_from->size % BLOCK_SIZE);
+                } else{
+                    buf_end_pos += BLOCK_SIZE;
+                }
+                
+                // Decide the next block to write to
+                for(int i = 2; i < 2048; i++){
+                    if(fat[i] == FAT_FREE){
+                        fat[blk_to] = i;
+                        blk_to = i;
+                        break;
+                    }
+                }
+            }
+        } else {
+            // Decide the next block to write to
+            for(int i = 2; i < 2048; i++){
+                if(fat[i] == FAT_FREE){
+                    fat[blk_to] = i;
+                    blk_to = i;
+                    break;
+                }
+            }
+
+            disk.write(blk_to, buf);
+            buf_end_pos = 0;
+            bytes_to_append = 0;
+        }
+        
+    }
+    fat[blk_to] = FAT_EOF;
+    entry_to->size += entry_from->size - 1;
+    disk.write(ROOT_BLOCK, (uint8_t*)blk);
+    disk.write(FAT_BLOCK, (uint8_t*)fat);
+
+
+    std::cout << "Successfully appended " << entry_from->file_name << " to the end of " << entry_to->file_name << "\n";
     return 0;
 }
 
