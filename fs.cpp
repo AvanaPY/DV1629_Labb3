@@ -315,6 +315,10 @@ FS::mv(std::string sourcepath, std::string destpath)
         std::cout << "Filename too long. The name of a file can be at most be 56 characters long\n";
         return 1;
     }
+    if(file_exists(destpath) != -1){
+      std::cout << "File \"" << destpath << "\" already exists.\n";
+      return 1;
+    }
     int file_index = file_exists(sourcepath);
 
     if(file_index == -1){
