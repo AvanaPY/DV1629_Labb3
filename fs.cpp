@@ -22,7 +22,6 @@ FS::~FS()
 int
 FS::format()
 {
-    std::cout << "FS::format()\n";
     fat[0] = FAT_EOF;
     fat[1] = FAT_EOF;
     for(int i = 2; i < BLOCK_SIZE/2; i++){
@@ -39,6 +38,8 @@ FS::format()
 
     disk.write(ROOT_BLOCK, (uint8_t*)blk);
     disk.write(FAT_BLOCK, (uint8_t*)fat);
+
+    std::cout << "Formatted the disk successfully\n";
     return 0;
 }
 
@@ -65,6 +66,9 @@ FS::create(std::string filepath)
         }
     }
 
+    // Write a line accross the screen to indicate the end of the file for the user
+    std::cout << "------------------------------------------------\n";
+
     // Write data
     char *c_accum = (char*)accum.c_str();
     int bytes_to_write = accum.length() + 1;
@@ -89,8 +93,6 @@ FS::create(std::string filepath)
         if(first_block == -1)
             first_block = block;
         previous_block = block;
-
-        std::cout << "Bytes left: " << bytes_to_write << "\n";
     }
 
     // Update directory data
@@ -114,12 +116,11 @@ FS::create(std::string filepath)
     e->type = TYPE_FILE;
     e->access_rights = READ | WRITE | EXECUTE;
 
-    std::cout << "File length: " << e->size << "\n";
-    std::cout << "From block " << first_block << " to block " << block << "\n";
 
     disk.write(ROOT_BLOCK, (uint8_t*)blk);
     disk.write(FAT_BLOCK, (uint8_t*)fat);
 
+    std::cout << "File: \"" <<  e->file_name << "\"\n" << "Size: " << e->size << "\n";
     return 0;
 }
 
@@ -127,7 +128,10 @@ FS::create(std::string filepath)
 int
 FS::cat(std::string filepath)
 {
-    std::cout << "FS::cat(" << filepath << ")\n";
+    if(file_exists(filepath) == -1){
+        std::cout << "File \"" << filepath << "\" does not exist.\n";
+        return 1;
+    }
 
     dir_entry blk[BLOCK_SIZE];
     disk.read(ROOT_BLOCK, (uint8_t*)blk);
@@ -138,8 +142,6 @@ FS::cat(std::string filepath)
         return 1;
 
     dir_entry e = blk[i];
-
-    std::cout << e.file_name << " " << i << "\n";
 
     char *cblk = (char*)blk;
     int block = e.first_blk;
@@ -159,18 +161,10 @@ FS::cat(std::string filepath)
 int
 FS::ls()
 {
-    std::cout << "FS::ls()\n";
-
-    std::cout << "FAT status: ";
-    for(int i = 0; i < 32; i++){
-      std::cout << fat[i] << " ";
-    }
-    std::cout << "\n";
-
     dir_entry blk[BLOCK_SIZE];
     disk.read(ROOT_BLOCK, (uint8_t*)blk);
 
-    std::string str = "    Size   File name\n";
+    std::string str = "    Size    File name\n";
     std::cout << str;
 
     for(int i = 0; i < BLOCK_SIZE / sizeof(dir_entry); i++){
@@ -180,7 +174,7 @@ FS::ls()
             str.append(4 - str.length(), ' ');
 
             str.append(std::to_string(blk[i].size));
-            str.append(11 - str.length(), ' ');
+            str.append(12 - str.length(), ' ');
 
             str.append(blk[i].file_name);
             std::cout << str << "\n";
@@ -220,9 +214,16 @@ FS::cp(std::string sourcepath, std::string destpath)
 
     // Make copy of dir_entry
     dir_entry file_entry = blk[i];
-    dir_entry *copy_entry;
 
-    for(copy_entry = blk; copy_entry->first_blk > 0 && copy_entry < blk + 64; copy_entry++){}
+    int free_entry_id = find_empty_dir_entry_id(blk);
+
+
+    if(free_entry_id == -1){
+        std::cout << "No free space in directory to copy file." << "\n";
+        return 1;
+    }
+
+    dir_entry *copy_entry = blk + free_entry_id;
 
     for(int i = 0; i < 56; i++)
       copy_entry->file_name[i] = 0;
@@ -234,42 +235,43 @@ FS::cp(std::string sourcepath, std::string destpath)
     // For each block, copy the data to another block
 
     uint8_t blk_buf[BLOCK_SIZE];
+    int blk_src = file_entry.first_blk;
+    int blk_dest = -1;
 
-    int c_blk = file_entry.first_blk;
-    int to_block = -1;
-    while(c_blk != FAT_EOF){
+    // TODO: Perhaps count the number of blocks required and make sure that there's enough space on the disk before we start copying the file
 
-      // Find empty block
-      for(int i = 2; i < 2048; i++){
-          if(fat[i] == FAT_FREE){
+    while(blk_src != FAT_EOF) { // While we have not reached EOF
+        // Find empty block
+        for(int i = 2; i < 2048; i++){
+            if(fat[i] == FAT_FREE){
+                if(blk_dest == -1){
+                    copy_entry->first_blk = i;
+                    fat[i] = FAT_EOF;
+                } else {
+                    fat[blk_dest] = i;
+                    fat[i] = FAT_EOF;
+                }
+                blk_dest = i;
+                break;
+            }
+        } // -- for
 
-              if(to_block == -1){
-                copy_entry->first_blk = i;
-                fat[i] = FAT_EOF;
-              } else {
-                fat[to_block] = i;
-                fat[i] = FAT_EOF;
-              }
-              to_block = i;
-              break;
-          }
-      }
+        if(blk_dest <= 1) // This should never happen but who knows
+            return 1;
 
-      if(to_block <= 0)
-        return 1;
-      else if(to_block == 1)
-        return 2;
+        // Copy the file contents by reading a block into our buffer and then writing our buffer to another block
+        disk.read(blk_src, blk_buf);
+        disk.write(blk_dest, blk_buf);
 
-      disk.read(c_blk, blk_buf);
-      disk.write(to_block, blk_buf);
-
-      // Next block
-      c_blk = fat[c_blk];
+        // Next block
+        blk_src = fat[blk_src];
     }
+                                  
+
     // Update the copied dir_entry
     disk.write(ROOT_BLOCK, (uint8_t*)blk);
     disk.write(FAT_BLOCK, (uint8_t*)fat);
-    std::cout << copy_entry->first_blk << "\n";
+    std::cout << "Successfully copied " << sourcepath << " into " << destpath << "\n";
    return 0;
 }
 
@@ -349,4 +351,14 @@ FS::file_exists(std::string filename)
   if(i >= BLOCK_SIZE / sizeof(dir_entry))
     i = -1;
   return i;
+}
+
+
+int 
+FS::find_empty_dir_entry_id(dir_entry* entries){
+    for(int i = 0; i < BLOCK_SIZE / sizeof(dir_entry); i++){
+        if(entries[i].first_blk == 0)
+            return i;
+    }
+    return -1;
 }
