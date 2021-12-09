@@ -102,8 +102,8 @@ FS::create(std::string filepath)
     // Update directory data
     dir_entry *blk = read_current_directory();
 
-    dir_entry *e;
-    for(e = blk; e->first_blk > 0 && e < blk + 64; e++){}
+    int empty_entry = find_empty_dir_entry_id(blk);
+    dir_entry *e = blk + empty_entry;
 
     for(int i = 0; i < 55; i++){
         if(i < filepath.size())
@@ -201,6 +201,9 @@ FS::ls()
 
             str.append(20 - str.length(), ' ');
             str.append(blk[i].file_name);
+
+            str.append(25 - str.length(), ' ');
+            str.append(std::to_string(blk[i].first_blk));
 
             std::cout << str << "\n";
         } else if(blk[i].type == TYPE_FILE) {
@@ -358,6 +361,7 @@ FS::rm(std::string filepath)
 
     // Set first block to 0 to indicate this dir_entry is not used
     file_entry->first_blk = 0;
+    file_entry->size = 0;
 
     disk.write(current_directory_block(), (uint8_t*)blk);
     disk.write(FAT_BLOCK, (uint8_t*)fat);
@@ -522,6 +526,12 @@ FS::mkdir(std::string dirpath)
 
     std::cout << "Created \"..\" in location " << free_entry << "\n";
 
+    std::cout << parent_entry->file_name << "\n";
+    std::cout << parent_entry->size << "\n";
+    std::cout << parent_entry->first_blk << "\n";
+    std::cout << parent_entry->type << "\n";
+    std::cout << parent_entry->access_rights << "\n";
+
     disk.write(free_block, (uint8_t*)dir_blk);
     return 0;
 }
@@ -549,7 +559,35 @@ FS::cd(std::string dirpath)
 int
 FS::pwd()
 {
-    std::cout << "FS::pwd()\n";
+    std::string path;
+    int blk_id = current_directory_block();
+
+    while(blk_id != ROOT_BLOCK){
+        std::cout << "Reading block " << blk_id << " as dir block\n";
+        dir_entry entry = *read_as_directory(blk_id);
+
+        std::cout << "Reading block " << entry.first_blk << " as parent block\n";
+        dir_entry* parent_blk = read_as_directory(entry.first_blk);
+
+        path.insert(0, "/");
+        for(int i = 0; i < BLOCK_SIZE / sizeof(dir_entry); i++){
+            if(!file_is_visible(parent_blk + i))
+                continue;
+            
+            if(parent_blk[i].first_blk == blk_id)
+                path.insert(0, parent_blk[i].file_name);
+            else
+                std::cout << "Not conidering " << parent_blk[i].file_name << "\n";
+        }
+
+        // First one should always be the .. directory in a non-root directory
+        std::cout << "blk_id " << blk_id << " | " << entry.file_name << " | " << entry.first_blk << "\n";
+        blk_id = entry.first_blk;
+    }
+
+    path.insert(0, "/");
+
+    std::cout << path.c_str() << "\n";
     return 0;
 }
 
