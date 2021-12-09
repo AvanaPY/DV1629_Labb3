@@ -30,7 +30,9 @@ FS::format()
         fat[i] = FAT_FREE;
     }
 
-    dir_entry *blk = read_current_directory();
+    dir_entry *blk = read_as_directory(ROOT_BLOCK);
+    blk_curr_dir = ROOT_BLOCK;
+    
 
     // Reset all dir_entries in root folder to start on block 0 so they do not show up
     for(int i = 0; i < BLOCK_SIZE / sizeof(dir_entry); i++){
@@ -563,10 +565,7 @@ FS::pwd()
     int blk_id = current_directory_block();
 
     while(blk_id != ROOT_BLOCK){
-        std::cout << "Reading block " << blk_id << " as dir block\n";
-        dir_entry entry = *read_as_directory(blk_id);
-
-        std::cout << "Reading block " << entry.first_blk << " as parent block\n";
+        dir_entry entry = read_as_directory(blk_id)[0];
         dir_entry* parent_blk = read_as_directory(entry.first_blk);
 
         path.insert(0, "/");
@@ -576,12 +575,9 @@ FS::pwd()
             
             if(parent_blk[i].first_blk == blk_id)
                 path.insert(0, parent_blk[i].file_name);
-            else
-                std::cout << "Not conidering " << parent_blk[i].file_name << "\n";
         }
 
         // First one should always be the .. directory in a non-root directory
-        std::cout << "blk_id " << blk_id << " | " << entry.file_name << " | " << entry.first_blk << "\n";
         blk_id = entry.first_blk;
     }
 
