@@ -526,14 +526,6 @@ FS::mkdir(std::string dirpath)
     parent_entry->type = TYPE_DIR;
     parent_entry->access_rights = READ | WRITE | EXECUTE;
 
-    std::cout << "Created \"..\" in location " << free_entry << "\n";
-
-    std::cout << parent_entry->file_name << "\n";
-    std::cout << parent_entry->size << "\n";
-    std::cout << parent_entry->first_blk << "\n";
-    std::cout << parent_entry->type << "\n";
-    std::cout << parent_entry->access_rights << "\n";
-
     disk.write(free_block, (uint8_t*)dir_blk);
     return 0;
 }
@@ -564,24 +556,30 @@ FS::pwd()
     std::string path;
     int blk_id = current_directory_block();
 
-    while(blk_id != ROOT_BLOCK){
-        dir_entry entry = read_as_directory(blk_id)[0];
-        dir_entry* parent_blk = read_as_directory(entry.first_blk);
+    if(blk_id == ROOT_BLOCK){
+        path = "/";
+    } else {
+        do {
+            // First entry in a non-root direcotry should always be the .. directory
+            dir_entry entry = read_as_directory(blk_id)[0];
+            dir_entry* parent_blk = read_as_directory(entry.first_blk);
 
-        path.insert(0, "/");
-        for(int i = 0; i < BLOCK_SIZE / sizeof(dir_entry); i++){
-            if(!file_is_visible(parent_blk + i))
-                continue;
-            
-            if(parent_blk[i].first_blk == blk_id)
-                path.insert(0, parent_blk[i].file_name);
-        }
+            // Iterate over all dir entries in parent directory 
+            // and find which dir_entry points to the current block
+            // and insert the name of that dir_entry
+            for(int i = 0; i < BLOCK_SIZE / sizeof(dir_entry); i++){
+                if(!file_is_visible(parent_blk + i))
+                    continue;
+                
+                if(parent_blk[i].first_blk == blk_id)
+                    path.insert(0, parent_blk[i].file_name);
+            }
 
-        // First one should always be the .. directory in a non-root directory
-        blk_id = entry.first_blk;
+            // Insert a "/" and update the current block to the parent's block
+            path.insert(0, "/");
+            blk_id = entry.first_blk;
+        } while(blk_id != ROOT_BLOCK);
     }
-
-    path.insert(0, "/");
 
     std::cout << path.c_str() << "\n";
     return 0;
