@@ -204,9 +204,6 @@ FS::ls()
             str.append(20 - str.length(), ' ');
             str.append(blk[i].file_name);
 
-            str.append(25 - str.length(), ' ');
-            str.append(std::to_string(blk[i].first_blk));
-
             std::cout << str << "\n";
         } else if(blk[i].type == TYPE_FILE) {
             str = std::to_string(i);
@@ -313,26 +310,68 @@ FS::mv(std::string sourcepath, std::string destpath)
         std::cout << "Filename too long. The name of a file can be at most be 56 characters long\n";
         return 1;
     }
-    if(file_exists(destpath) != -1){
-      std::cout << "File \"" << destpath << "\" already exists.\n";
-      return 1;
-    }
+
     // Make sure the file exists
     int file_index = file_exists(sourcepath);
     if(file_index == -1){
         std::cout << "File does not exist.\n";
         return 1;
     }
-
     // Load the current directory
     dir_entry *blk = read_current_directory();
 
-    // Copy the new name into the file's dir_entry
-    dir_entry *file_entry = blk + file_index;
-    std::strcpy(file_entry->file_name, destpath.c_str());
+    int dest_idx = file_exists(destpath);
 
-    disk.write(current_directory_block(), (uint8_t*)blk);
-    std::cout << "Successfully renamed " << sourcepath << " to " << file_entry->file_name << "\n";
+    dir_entry dest_file;
+
+    // If the file exists, check if it's TYPE_FILE or TYPE_DIR
+    if(dest_idx != -1){ 
+        dest_file = blk[dest_idx];
+
+        if(dest_file.type == TYPE_FILE){
+            std::cout << "File \"" << destpath << "\" already exists.\n";
+            return 1;
+        }
+    }
+
+    // At this point, if dest_idx != -1, then the file exists and it's a directory
+    if(dest_idx != -1){
+        dir_entry *file_entry = blk + file_index;
+    
+        int new_blk_id = find_final_block(current_directory_block(), destpath);
+
+        dir_entry* new_blk = read_as_directory(new_blk_id);
+        int empty_dir_entry = find_empty_dir_entry_id(new_blk);
+
+        std::cout << "Empty dir: " << empty_dir_entry << "\n";
+
+        dir_entry *new_entry = new_blk + empty_dir_entry;
+
+        // Update new file entry to have same data as old
+        strcpy(new_entry->file_name, file_entry->file_name);
+        new_entry->size = file_entry->size;
+        new_entry->first_blk = file_entry->first_blk;
+        new_entry->type = file_entry->type;
+        new_entry->access_rights = file_entry->access_rights;
+
+        // Set old file entry as empty
+        file_entry->size = 0;
+        file_entry->first_blk = 0;
+
+        std::cout << "New file name: " << new_entry->file_name << "\n";
+
+        // Write new data to disk
+        disk.write(current_directory_block(), (uint8_t*)blk);
+        disk.write(new_blk_id, (uint8_t*)new_blk);
+        std::cout << "Successfully moved " << sourcepath << " to " << new_blk_id << "\n";
+    } else {
+        dir_entry *file_entry = blk + file_index;
+        // Copy the new name into the file's dir_entry
+        std::strcpy(file_entry->file_name, destpath.c_str());
+
+        disk.write(current_directory_block(), (uint8_t*)blk);
+        std::cout << "Successfully renamed " << sourcepath << " to " << file_entry->file_name << "\n";
+    }
     return 0;
 }
 
@@ -597,6 +636,13 @@ FS::chmod(std::string accessrights, std::string filepath)
 int
 FS::file_exists(std::string filename)
 {
+    int slash = filename.find("/");
+    if (slash != -1){
+        filename = filename.substr(0, slash); // If there is a slash indicating a full path, 
+                                              // only pick the first one
+                                              // i.e dir/dir2 -> dir
+    }
+
     dir_entry *blk = read_current_directory();
 
     int i;
@@ -611,7 +657,8 @@ FS::file_exists(std::string filename)
 }
 
 int 
-FS::find_empty_dir_entry_id(dir_entry* entries){
+FS::find_empty_dir_entry_id(dir_entry* entries)
+{
     for(int i = 0; i < BLOCK_SIZE / sizeof(dir_entry); i++){
         if(!file_is_visible(entries + i))
             return i;
@@ -620,7 +667,8 @@ FS::find_empty_dir_entry_id(dir_entry* entries){
 }
 
 int 
-FS::find_empty_block_id(){
+FS::find_empty_block_id()
+{
     for(int i = 2; i < 2048; i++){
         if(fat[i] == FAT_FREE)
             return i;
@@ -629,27 +677,60 @@ FS::find_empty_block_id(){
 }
 
 int
-FS::current_directory_block(){
+FS::current_directory_block()
+{
     return blk_curr_dir;
 }
 
 dir_entry*
-FS::read_as_directory(int block){
+FS::read_as_directory(int block)
+{
     static dir_entry blk[BLOCK_SIZE];
     disk.read(block, (uint8_t*)blk);
     return blk;
 }
 
 dir_entry*
-FS::read_current_directory(){
+FS::read_current_directory()
+{
     return read_as_directory(current_directory_block());
 }
 
 bool
-FS::file_is_visible(dir_entry* file){
+FS::file_is_visible(dir_entry* file)
+{
     if(file->type == TYPE_FILE){
         return file->first_blk != 0;
     } else {
         return file->size != 0;
     }
+}
+
+int
+FS::find_final_block(int c_blk, std::string path)
+{
+    std::string buf;
+
+    while(!path.empty()){
+
+        int slash_id = path.find("/");
+
+        if(slash_id != -1){
+            buf = path.substr(0, slash_id);
+            path.erase(0, slash_id + 1);
+        } else {
+            buf = path;
+            path.erase(0, path.length());
+        }
+
+        dir_entry *curr_dir_entries = read_as_directory(c_blk);
+
+        for(int i = 0; i < BLOCK_SIZE / sizeof(dir_entry); i++){
+            if(buf == curr_dir_entries[i].file_name){
+                c_blk = curr_dir_entries[i].first_blk;
+                break;
+            }
+        }
+    }
+    return c_blk;
 }

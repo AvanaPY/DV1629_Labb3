@@ -79,6 +79,7 @@ public:
     dir_entry* read_current_directory();
 
     bool file_is_visible(dir_entry *file);
+    int find_final_block(int c_blk, std::string path);
 };
 
 #endif // __FS_H__
