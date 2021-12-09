@@ -503,16 +503,16 @@ FS::mkdir(std::string dirpath)
 
     for(int i = 0; i < BLOCK_SIZE / sizeof(dir_entry); i++){
         dir_blk[i].first_blk = 0;
+        dir_blk[i].size = 0;
     }
 
     int free_entry = find_empty_dir_entry_id(dir_blk);
+    dir_entry *parent_entry = dir_blk + free_entry;
 
     if(free_entry == -1){
         std::cout << "Could not create sub-folder \"..\": Not enough space on block.\n"; // This should never happen
         return 1;
     }
-
-    dir_entry *parent_entry = dir_blk + free_entry;
 
     strcpy(parent_entry->file_name, "..\0");
     parent_entry->size = 1;
@@ -581,7 +581,7 @@ FS::file_exists(std::string filename)
 int 
 FS::find_empty_dir_entry_id(dir_entry* entries){
     for(int i = 0; i < BLOCK_SIZE / sizeof(dir_entry); i++){
-        if(entries[i].first_blk == 0)
+        if(!file_is_visible(entries + i))
             return i;
     }
     return -1;
