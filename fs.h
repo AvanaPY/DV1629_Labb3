@@ -75,8 +75,6 @@ public:
     int find_empty_dir_entry_id(dir_entry* entries);
     int find_empty_block_id();
     int current_directory_block();
-    dir_entry* read_as_directory(int block);
-    dir_entry* read_current_directory();
 
     bool file_is_visible(dir_entry *file);
     int find_final_block(int c_blk, std::string path);

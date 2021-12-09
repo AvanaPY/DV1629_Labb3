@@ -30,7 +30,8 @@ FS::format()
         fat[i] = FAT_FREE;
     }
 
-    dir_entry *blk = read_as_directory(ROOT_BLOCK);
+    dir_entry blk[BLOCK_SIZE];
+    disk.read(ROOT_BLOCK, (uint8_t*)blk);
     blk_curr_dir = ROOT_BLOCK;
     
 
@@ -102,7 +103,8 @@ FS::create(std::string filepath)
     }
 
     // Update directory data
-    dir_entry *blk = read_current_directory();
+    dir_entry blk[BLOCK_SIZE];
+    disk.read(current_directory_block(), (uint8_t*)blk);
 
     int empty_entry = find_empty_dir_entry_id(blk);
     dir_entry *e = blk + empty_entry;
@@ -136,7 +138,8 @@ FS::cat(std::string filepath)
         return 1;
     }
 
-    dir_entry *blk = read_current_directory();
+    dir_entry blk[BLOCK_SIZE];
+    disk.read(current_directory_block(), (uint8_t*)blk);
 
     int i = file_exists(filepath);
 
@@ -184,7 +187,8 @@ FS::ls()
     }
     std::cout << "\n";
 
-    dir_entry *blk = read_current_directory();
+    dir_entry blk[BLOCK_SIZE];
+    disk.read(current_directory_block(), (uint8_t*)blk);
 
     std::string str;
     std::cout << "    Type    Size    Name\n";
@@ -240,7 +244,8 @@ FS::cp(std::string sourcepath, std::string destpath)
     }
 
     // Read current directory
-    dir_entry *blk = read_current_directory();
+    dir_entry blk[BLOCK_SIZE];
+    disk.read(current_directory_block(), (uint8_t*)blk);
 
     // Make copy of dir_entry
     dir_entry file_entry = blk[source_file_id];
@@ -318,7 +323,8 @@ FS::mv(std::string sourcepath, std::string destpath)
         return 1;
     }
     // Load the current directory
-    dir_entry *blk = read_current_directory();
+    dir_entry blk[BLOCK_SIZE];
+    disk.read(current_directory_block(), (uint8_t*)blk);
 
     int dest_idx = file_exists(destpath);
 
@@ -340,19 +346,22 @@ FS::mv(std::string sourcepath, std::string destpath)
     
         int new_blk_id = find_final_block(current_directory_block(), destpath);
 
-        dir_entry* new_blk = read_as_directory(new_blk_id);
+        dir_entry new_blk[BLOCK_SIZE];
+        disk.read(new_blk_id, (uint8_t*)new_blk);
+        
         int empty_dir_entry = find_empty_dir_entry_id(new_blk);
-
-        std::cout << "Empty dir: " << empty_dir_entry << "\n";
-
         dir_entry *new_entry = new_blk + empty_dir_entry;
 
-        // Update new file entry to have same data as old
-        strcpy(new_entry->file_name, file_entry->file_name);
-        new_entry->size = file_entry->size;
-        new_entry->first_blk = file_entry->first_blk;
-        new_entry->type = file_entry->type;
-        new_entry->access_rights = file_entry->access_rights;
+        std::cout << "Updating " << new_entry->file_name << " to " << file_entry->file_name << "\n";
+
+        std::cout << strcmp(blk[0].file_name, new_blk[0].file_name) << "\n";
+
+
+        strcpy(new_entry->file_name,  file_entry->file_name);
+        new_entry->size             = file_entry->size;
+        new_entry->first_blk        = file_entry->first_blk;
+        new_entry->type             = file_entry->type;
+        new_entry->access_rights    = file_entry->access_rights;
 
         // Set old file entry as empty
         file_entry->size = 0;
@@ -387,7 +396,8 @@ FS::rm(std::string filepath)
     }
     
     // Load the root directory
-    dir_entry *blk = read_current_directory();
+    dir_entry blk[BLOCK_SIZE];
+    disk.read(current_directory_block(), (uint8_t*)blk);
     
     // Grab a pointer to the file's dir_entry
     dir_entry *file_entry = blk + file_index;
@@ -429,7 +439,8 @@ FS::append(std::string filepath1, std::string filepath2)
     }
 
     // Load the root directory 
-    dir_entry *blk = read_current_directory();
+    dir_entry blk[BLOCK_SIZE];
+    disk.read(current_directory_block(), (uint8_t*)blk);
 
     dir_entry *entry_from = blk + file_1_id;
     dir_entry *entry_to = blk + file_2_id;
@@ -509,7 +520,8 @@ int
 FS::mkdir(std::string dirpath)
 {
     // Load the current directory directory
-    dir_entry *blk = read_current_directory();
+    dir_entry blk[BLOCK_SIZE];
+    disk.read(current_directory_block(), (uint8_t*)blk);
 
     int entry_id = find_empty_dir_entry_id(blk);
     if(entry_id == -1){
@@ -544,7 +556,8 @@ FS::mkdir(std::string dirpath)
     // Update the new directory's own block free_block
     // with our file ".." that points to the current block
 
-    dir_entry *dir_blk = read_as_directory(free_block);
+    dir_entry dir_blk[BLOCK_SIZE];
+    disk.read(free_block, (uint8_t*)dir_blk);
 
     for(int i = 0; i < BLOCK_SIZE / sizeof(dir_entry); i++){
         dir_blk[i].first_blk = 0;
@@ -573,7 +586,8 @@ FS::mkdir(std::string dirpath)
 int
 FS::cd(std::string dirpath)
 {
-    dir_entry* blk = read_current_directory();
+    dir_entry blk[BLOCK_SIZE];
+    disk.read(current_directory_block(), (uint8_t*)blk);
 
     int file_idx = file_exists(dirpath);
     if(file_idx == -1){
@@ -598,20 +612,23 @@ FS::pwd()
     if(blk_id == ROOT_BLOCK){
         path = "/";
     } else {
+        dir_entry blk[BLOCK_SIZE];
         do {
+            disk.read(blk_id, (uint8_t*)blk);
             // First entry in a non-root direcotry should always be the .. directory
-            dir_entry entry = read_as_directory(blk_id)[0];
-            dir_entry* parent_blk = read_as_directory(entry.first_blk);
+            dir_entry entry = blk[0];
+
+            disk.read(entry.first_blk, (uint8_t*)blk);
 
             // Iterate over all dir entries in parent directory 
             // and find which dir_entry points to the current block
             // and insert the name of that dir_entry
             for(int i = 0; i < BLOCK_SIZE / sizeof(dir_entry); i++){
-                if(!file_is_visible(parent_blk + i))
+                if(!file_is_visible(blk + i))
                     continue;
                 
-                if(parent_blk[i].first_blk == blk_id)
-                    path.insert(0, parent_blk[i].file_name);
+                if(blk[i].first_blk == blk_id)
+                    path.insert(0, blk[i].file_name);
             }
 
             // Insert a "/" and update the current block to the parent's block
@@ -643,7 +660,8 @@ FS::file_exists(std::string filename)
                                               // i.e dir/dir2 -> dir
     }
 
-    dir_entry *blk = read_current_directory();
+    dir_entry blk[BLOCK_SIZE];
+    disk.read(current_directory_block(), (uint8_t*)blk);
 
     int i;
     for(i = 0; i < BLOCK_SIZE / sizeof(dir_entry); i++){
@@ -682,20 +700,6 @@ FS::current_directory_block()
     return blk_curr_dir;
 }
 
-dir_entry*
-FS::read_as_directory(int block)
-{
-    static dir_entry blk[BLOCK_SIZE];
-    disk.read(block, (uint8_t*)blk);
-    return blk;
-}
-
-dir_entry*
-FS::read_current_directory()
-{
-    return read_as_directory(current_directory_block());
-}
-
 bool
 FS::file_is_visible(dir_entry* file)
 {
@@ -723,7 +727,8 @@ FS::find_final_block(int c_blk, std::string path)
             path.erase(0, path.length());
         }
 
-        dir_entry *curr_dir_entries = read_as_directory(c_blk);
+        dir_entry curr_dir_entries[BLOCK_SIZE];
+        disk.read(c_blk, (uint8_t*)curr_dir_entries);
 
         for(int i = 0; i < BLOCK_SIZE / sizeof(dir_entry); i++){
             if(buf == curr_dir_entries[i].file_name){
