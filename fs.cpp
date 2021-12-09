@@ -3,6 +3,8 @@
 #include <string>
 #include <cstring>
 
+int blk_curr_dir = ROOT_BLOCK;
+
 FS::FS()
 {
     std::cout << "FS::FS()... Creating file system\n";
@@ -32,6 +34,7 @@ FS::format()
 
     // Reset all dir_entries in root folder to start on block 0 so they do not show up
     for(int i = 0; i < BLOCK_SIZE / sizeof(dir_entry); i++){
+        blk[i].size = 0;
         blk[i].first_blk = 0;
     }
 
@@ -115,7 +118,7 @@ FS::create(std::string filepath)
     e->type = TYPE_FILE;
     e->access_rights = READ | WRITE | EXECUTE;
 
-    disk.write(ROOT_BLOCK, (uint8_t*)blk);
+    disk.write(current_directory_block(), (uint8_t*)blk);
     disk.write(FAT_BLOCK, (uint8_t*)fat);
 
     std::cout << "File: \"" <<  e->file_name << "\"\n" << "Size: " << e->size << "\n";
@@ -184,6 +187,8 @@ FS::ls()
     std::string str;
     std::cout << "    Type    Size    Name\n";
     for(int i = 0; i < BLOCK_SIZE / sizeof(dir_entry); i++){
+        if(!file_is_visible(blk + i))
+            continue;
         if(blk[i].type == TYPE_DIR){
 
             str = std::to_string(i);
@@ -288,7 +293,7 @@ FS::cp(std::string sourcepath, std::string destpath)
     }
                                   
     // Update the copied dir_entry
-    disk.write(ROOT_BLOCK, (uint8_t*)blk);
+    disk.write(current_directory_block(), (uint8_t*)blk);
     disk.write(FAT_BLOCK, (uint8_t*)fat);
     std::cout << "Successfully copied " << sourcepath << " into " << destpath << "\n";
    return 0;
@@ -321,7 +326,7 @@ FS::mv(std::string sourcepath, std::string destpath)
     dir_entry *file_entry = blk + file_index;
     std::strcpy(file_entry->file_name, destpath.c_str());
 
-    disk.write(ROOT_BLOCK, (uint8_t*)blk);
+    disk.write(current_directory_block(), (uint8_t*)blk);
     std::cout << "Successfully renamed " << sourcepath << " to " << file_entry->file_name << "\n";
     return 0;
 }
@@ -354,7 +359,7 @@ FS::rm(std::string filepath)
     // Set first block to 0 to indicate this dir_entry is not used
     file_entry->first_blk = 0;
 
-    disk.write(ROOT_BLOCK, (uint8_t*)blk);
+    disk.write(current_directory_block(), (uint8_t*)blk);
     disk.write(FAT_BLOCK, (uint8_t*)fat);
 
     std::cout << "Successfully removed file " << filepath << "\n";
@@ -446,7 +451,7 @@ FS::append(std::string filepath1, std::string filepath2)
 
     entry_to->size += entry_from->size; 
 
-    disk.write(ROOT_BLOCK, (uint8_t*)blk);
+    disk.write(current_directory_block(), (uint8_t*)blk);
     disk.write(FAT_BLOCK, (uint8_t*)fat);
 
     std::cout << "Successfully appended " << entry_from->file_name << " to the end of " << entry_to->file_name << "\n";
@@ -462,23 +467,62 @@ FS::mkdir(std::string dirpath)
     dir_entry *blk = read_current_directory();
 
     int entry_id = find_empty_dir_entry_id(blk);
-
     if(entry_id == -1){
-        std::cout << "Could not create directory; No free blocks available.\n";
+        std::cout << "Could not create directory: Not enough space in directory.\n";
         return 1;
     }
 
-    std::cout << "Found free entry at id " << entry_id << "\n";
+    int free_block = find_empty_block_id();
+    if(free_block == -1){
+        std::cout << "Could not create directory: No free blocks available.\n";
+        return 1;
+    }
 
+    // Create directory entry
     dir_entry *entry = blk + entry_id;
 
     strcpy(entry->file_name, dirpath.c_str());
-    entry->size = 0;
-    entry->first_blk = 7;
+    entry->size = 1;
+    entry->first_blk = free_block;
     entry->type = TYPE_DIR;
     entry->access_rights = WRITE | READ | EXECUTE;
+
+    // Update FAT 
+    fat[free_block] = FAT_EOF;
+
+    // Write our block
     disk.write(current_directory_block(), (uint8_t*)blk);
-    std::cout << "Successfully created directory " << blk[entry_id].file_name << "\n";
+    disk.write(FAT_BLOCK, (uint8_t*)fat);
+    std::cout << "Successfully created directory " << entry->file_name << "\n";
+
+
+    // Update the new directory's own block free_block
+    // with our file ".." that points to the current block
+
+    dir_entry *dir_blk = read_as_directory(free_block);
+
+    for(int i = 0; i < BLOCK_SIZE / sizeof(dir_entry); i++){
+        dir_blk[i].first_blk = 0;
+    }
+
+    int free_entry = find_empty_dir_entry_id(dir_blk);
+
+    if(free_entry == -1){
+        std::cout << "Could not create sub-folder \"..\": Not enough space on block.\n"; // This should never happen
+        return 1;
+    }
+
+    dir_entry *parent_entry = dir_blk + free_entry;
+
+    strcpy(parent_entry->file_name, "..\0");
+    parent_entry->size = 1;
+    parent_entry->first_blk = blk_curr_dir;
+    parent_entry->type = TYPE_DIR;
+    parent_entry->access_rights = READ | WRITE | EXECUTE;
+
+    std::cout << "Created \"..\" in location " << free_entry << "\n";
+
+    disk.write(free_block, (uint8_t*)dir_blk);
     return 0;
 }
 
@@ -486,7 +530,17 @@ FS::mkdir(std::string dirpath)
 int
 FS::cd(std::string dirpath)
 {
-    std::cout << "FS::cd(" << dirpath << ")\n";
+    dir_entry* blk = read_current_directory();
+
+    int file_idx = file_exists(dirpath);
+    if(file_idx == -1){
+        std::cout << "Directory \"" << dirpath << "\" does not exist\n";
+        return 1;
+    }
+
+    dir_entry *file = blk + file_idx;
+
+    blk_curr_dir = file->first_blk;
     return 0;
 }
 
@@ -515,7 +569,7 @@ FS::file_exists(std::string filename)
 
     int i;
     for(i = 0; i < BLOCK_SIZE / sizeof(dir_entry); i++){
-        if(blk[i].first_blk > 0 && std::string(blk[i].file_name) == filename){
+        if(file_is_visible(blk + i) && std::string(blk[i].file_name) == filename){
             break;
         }
     }
@@ -544,12 +598,26 @@ FS::find_empty_block_id(){
 
 int
 FS::current_directory_block(){
-    return ROOT_BLOCK;
+    return blk_curr_dir;
+}
+
+dir_entry*
+FS::read_as_directory(int block){
+    static dir_entry blk[BLOCK_SIZE];
+    disk.read(block, (uint8_t*)blk);
+    return blk;
 }
 
 dir_entry*
 FS::read_current_directory(){
-    static dir_entry blk[BLOCK_SIZE];
-    disk.read(current_directory_block(), (uint8_t*)blk);
-    return blk;
+    return read_as_directory(current_directory_block());
+}
+
+bool
+FS::file_is_visible(dir_entry* file){
+    if(file->type == TYPE_FILE){
+        return file->first_blk != 0;
+    } else {
+        return file->size != 0;
+    }
 }
