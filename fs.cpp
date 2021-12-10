@@ -134,28 +134,33 @@ FS::create(std::string filepath)
 int
 FS::cat(std::string filepath)
 {
-    if(file_exists(current_directory_block(), filepath) == -1){
-        std::cout << "File \"" << filepath << "\" does not exist.\n";
+    std::string filename;
+    get_file_name_from_path(filepath, &filename);
+    chop_file_name(&filepath);
+    // Find the directory block id where the file resides
+    int file_block = find_final_block(current_directory_block(), filepath);
+
+    // Make sure the file exists
+    int file_idx = file_exists(file_block, filename);
+    if(file_idx == -1){
+        std::cout << "File \"" << filename << "\" does not exist.\n";
         return 1;
     }
 
+    // Load the directory block
     dir_entry blk[BLOCK_SIZE];
-    disk.read(current_directory_block(), (uint8_t*)blk);
+    disk.read(file_block, (uint8_t*)blk);
+    dir_entry file_entry = blk[file_idx];
 
-    int i = file_exists(current_directory_block(), filepath);
-
-    if(i >= BLOCK_SIZE / sizeof(dir_entry)) // File not found
-        return 1;
-
-    dir_entry e = blk[i];
-
-    if(e.type == TYPE_DIR){
+    // Make sure the file is not a directory
+    if(file_entry.type == TYPE_DIR){
         std::cout << "Cannot cat a directory\n";
         return 1;
     }
 
+    // Cat out the file contents
     char *cblk = (char*)blk;
-    int block = e.first_blk;
+    int block = file_entry.first_blk;
     while(block != FAT_EOF){
 
         disk.read(block, (uint8_t*)cblk);
@@ -360,18 +365,10 @@ FS::mv(std::string sourcepath, std::string destpath)
     }
     else { // Else we're moving the file to a different directory 
 
-        // Find the block of destination sub-directory
+        // Load the block of the destination directory
         int new_blk_id = find_final_block(current_directory_block(), destpath);
-
-        std::cout << "New block id: " << new_blk_id << "\n";
-
         dir_entry new_blk[BLOCK_SIZE];
         disk.read(new_blk_id, (uint8_t*)new_blk);
-
-        std::cout << dest_idx << "\n";
-        
-        // Else we're moving the file to a new sub-directory
-        dir_entry *source_entry = blk + file_index;
 
         // If the destination sub-directory block is the same as current directory, we don't have to do anything
         if(new_blk_id == current_directory_block()){
@@ -379,7 +376,7 @@ FS::mv(std::string sourcepath, std::string destpath)
             return 0;
         }
 
-        // If a file with the same exists in the destination sub-directory, abort
+        // If a file with the same name as source already exists in the destination sub-directory, abort
         if(file_exists(new_blk_id, sourcepath) > 0){
             std::cout << "File with name " << sourcepath << " already exists in destination sub-directory, aborting\n";
             return 1;
@@ -387,22 +384,23 @@ FS::mv(std::string sourcepath, std::string destpath)
         
         // Find an empty dir_entry in destination sub-directory
         int empty_dir_entry = find_empty_dir_entry_id(new_blk);
-
         if(empty_dir_entry == -1){
             std::cout << "No free space for file in destination sub-directory\n";
             return 1;
         }
 
-        // Update directory entry in desination directory
+        // Get pointers to the source and destination file entries
+        dir_entry *source_entry = blk + file_index;
         dir_entry *dest_entry = new_blk + empty_dir_entry;
 
+        // Update the desination entry with the source entry data
         strcpy(dest_entry->file_name,  source_entry->file_name);
         dest_entry->size             = source_entry->size;
         dest_entry->first_blk        = source_entry->first_blk;
         dest_entry->type             = source_entry->type;
         dest_entry->access_rights    = source_entry->access_rights;
 
-        // Set old file entry as empty
+        // Set source entry as empty
         source_entry->size = 0;
         source_entry->first_blk = 0;
 
@@ -771,7 +769,7 @@ FS::current_directory_block()
 bool
 FS::file_is_visible(dir_entry* file)
 {
-    return  (file->type == TYPE_FILE && file->size > 0) ||
+    return  (file->type == TYPE_FILE && file->size >  0) ||
             (file->type == TYPE_DIR  && file->size != 0);
 }
 
@@ -779,7 +777,6 @@ int
 FS::find_final_block(int c_blk, std::string path)
 {
     if(path == "/"){
-        std::cout << "Is root\n";
         return ROOT_BLOCK;
     }
 
@@ -808,15 +805,41 @@ FS::find_final_block(int c_blk, std::string path)
 
         for(int i = 0; i < BLOCK_SIZE / sizeof(dir_entry); i++){
             if(buf == curr_dir_entries[i].file_name){
+                if(curr_dir_entries[i].type == TYPE_FILE)
+                    break;
                 n_blk = curr_dir_entries[i].first_blk;
                 break;
             }
         }
         if(n_blk != -1){
             c_blk = n_blk;
-        } else {
-            return -1;
         }
     }
     return c_blk;
+}
+
+int
+FS::chop_file_name(std::string* filepath)
+{
+    int last_slash_id = filepath->rfind('/');
+
+    if(last_slash_id != -1)
+        filepath->erase(last_slash_id, filepath->length()); // Remove everything from slash and onwards
+
+    // 
+    if(filepath->empty())
+        filepath->insert(0, "/");
+    return 0;
+}
+
+int
+FS::get_file_name_from_path(std::string filepath, std::string *filename)
+{
+    int last_slash_id = filepath.rfind('/');
+
+    if(last_slash_id != -1)
+        filepath.erase(0, last_slash_id+1);
+    
+    filename->append(filepath);
+    return 0;
 }

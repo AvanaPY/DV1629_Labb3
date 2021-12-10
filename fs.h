@@ -78,6 +78,8 @@ public:
 
     bool file_is_visible(dir_entry *file);
     int find_final_block(int c_blk, std::string path);
+    int chop_file_name(std::string* filepath);
+    int get_file_name_from_path(std::string filepath, std::string *filename);
 };
 
 #endif // __FS_H__
