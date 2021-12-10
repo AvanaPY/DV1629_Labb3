@@ -24,16 +24,16 @@ FS::~FS()
 int
 FS::format()
 {
+    // Reset FAT
     fat[0] = FAT_EOF;
     fat[1] = FAT_EOF;
     for(int i = 2; i < BLOCK_SIZE/2; i++){
         fat[i] = FAT_FREE;
     }
 
+    // Reset all the data in the root block to completely empty
     dir_entry blk[BLOCK_SIZE];
     blk_curr_dir = ROOT_BLOCK;
-    
-    // Reset all dir_entries in root folder to start on block 0 so they do not show up
     for(int i = 0; i < BLOCK_SIZE / sizeof(dir_entry); i++){
 
         blk[i].size = 0;
@@ -42,6 +42,7 @@ FS::format()
         blk[i].access_rights = READ | WRITE | EXECUTE;
     }
 
+    // Write data to disk
     disk.write(ROOT_BLOCK, (uint8_t*)blk);
     disk.write(FAT_BLOCK, (uint8_t*)fat);
 
@@ -657,7 +658,6 @@ FS::mkdir(std::string dirpath)
     disk.write(FAT_BLOCK, (uint8_t*)fat);
     std::cout << "Successfully created directory " << entry->file_name << "\n";
 
-
     // Update the new directory's own block free_block
     // with our file ".." that points to the current block
 
@@ -669,15 +669,16 @@ FS::mkdir(std::string dirpath)
         dir_blk[i].size = 0;
     }
 
+    // Find a free entry in the current directory
     int free_entry = find_empty_dir_entry_id(dir_blk);
-    dir_entry *parent_entry = dir_blk + free_entry;
-
     if(free_entry == -1){
         std::cout << "Could not create sub-folder \"..\": Not enough space on block.\n"; // This should never happen
         return 1;
     }
 
-    strcpy(parent_entry->file_name, "..\0");
+    // Create a ".." in the new directory that points to the current directory
+    dir_entry *parent_entry = dir_blk + free_entry;
+    strcpy(parent_entry->file_name, "..");
     parent_entry->size = 1;
     parent_entry->first_blk = blk_curr_dir;
     parent_entry->type = TYPE_DIR;
