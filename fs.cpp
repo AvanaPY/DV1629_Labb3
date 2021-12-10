@@ -261,7 +261,13 @@ FS::cp(std::string sourcepath, std::string destpath)
     if (destpath.find("/") != -1){                  
         // If the destpath includes any "/" then we're copying a file to another directory                           
 
+        // Check if the path exists is valid
         dest_blk_id = find_final_block(current_directory_block(), destpath);       
+        if(dest_blk_id == -1){
+            std::cout << "Invalid path for destination file\n";
+            return 1;
+        }
+
         if(dest_blk_id == current_directory_block()){                              
             std::cout << "Destination sub-directory is the same directory as the current one.\n";
             return 1;
@@ -403,8 +409,14 @@ FS::mv(std::string sourcepath, std::string destpath)
     }
     else { // Else we're moving the file to a different directory 
 
-        // Load the block of the destination directory
+        // Check if it's a valid path
         int new_blk_id = find_final_block(current_directory_block(), destpath);
+        if(new_blk_id == -1){
+            std::cout << "Invalid path for destination file\n";
+            return 1;
+        }
+
+        // Load the block of the destination directory
         dir_entry new_blk[BLOCK_SIZE];
         disk.read(new_blk_id, (uint8_t*)new_blk);
 
@@ -859,7 +871,6 @@ FS::find_final_block(int c_blk, std::string path)
             }
         }
         if(!found_next_block){
-            std::cout << "Invalid path!\n";
             return -1;
         }
     }
