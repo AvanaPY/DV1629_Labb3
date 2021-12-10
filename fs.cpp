@@ -860,17 +860,16 @@ FS::find_final_block(int c_blk, std::string path)
         disk.read(c_blk, (uint8_t*)curr_dir_entries);
 
         // Look at each entry and find the directory with the same name as in buf and update current block
-        bool found_next_block = false;
+        bool found_next_file = false;
         for(int i = 0; i < BLOCK_SIZE / sizeof(dir_entry); i++){
             if(buf == curr_dir_entries[i].file_name){
-                if(curr_dir_entries[i].type == TYPE_DIR){
+                if(curr_dir_entries[i].type == TYPE_DIR)
                     c_blk = curr_dir_entries[i].first_blk;
-                    found_next_block = true;
-                }
+                found_next_file = true;
                 break;
             }
         }
-        if(!found_next_block){
+        if(!found_next_file){
             return -1;
         }
     }
