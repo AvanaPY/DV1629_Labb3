@@ -57,7 +57,7 @@ FS::create(std::string filepath)
         std::cout << "Filename too long. The name of a file can be at most be 56 characters long\n";
         return 1;
     }
-    if(file_exists(filepath) != -1){
+    if(file_exists(current_directory_block(), filepath) != -1){
       std::cout << "File \"" << filepath << "\" already exists.\n";
       return 1;
     }
@@ -133,7 +133,7 @@ FS::create(std::string filepath)
 int
 FS::cat(std::string filepath)
 {
-    if(file_exists(filepath) == -1){
+    if(file_exists(current_directory_block(), filepath) == -1){
         std::cout << "File \"" << filepath << "\" does not exist.\n";
         return 1;
     }
@@ -141,7 +141,7 @@ FS::cat(std::string filepath)
     dir_entry blk[BLOCK_SIZE];
     disk.read(current_directory_block(), (uint8_t*)blk);
 
-    int i = file_exists(filepath);
+    int i = file_exists(current_directory_block(), filepath);
 
     if(i >= BLOCK_SIZE / sizeof(dir_entry)) // File not found
         return 1;
@@ -233,11 +233,11 @@ FS::ls()
 int
 FS::cp(std::string sourcepath, std::string destpath)
 {
-    if(file_exists(destpath) != -1){
+    if(file_exists(current_directory_block(), destpath) != -1){
       std::cout << "File \"" << destpath << "\" already exists.\n";
       return 1;
     }
-    int source_file_id = file_exists(sourcepath);
+    int source_file_id = file_exists(current_directory_block(), sourcepath);
     if(source_file_id == -1){
       std::cout << "File \"" << sourcepath << "\" does not exist.\n";
       return 1;
@@ -312,7 +312,7 @@ int
 FS::mv(std::string sourcepath, std::string destpath)
 {
     // Make sure the file we're moving exists
-    int file_index = file_exists(sourcepath);
+    int file_index = file_exists(current_directory_block(), sourcepath);
     if(file_index == -1){
         std::cout << "File does not exist.\n";
         return 1;
@@ -322,7 +322,7 @@ FS::mv(std::string sourcepath, std::string destpath)
     dir_entry blk[BLOCK_SIZE];
     disk.read(current_directory_block(), (uint8_t*)blk);
 
-    int dest_idx = file_exists(destpath);
+    int dest_idx = file_exists(current_directory_block(), destpath);
 
     dir_entry *file_entry;
 
@@ -341,6 +341,20 @@ FS::mv(std::string sourcepath, std::string destpath)
     
         // Find the block of destination sub-directory
         int new_blk_id = find_final_block(current_directory_block(), destpath);
+
+        // If the destination sub-directory block is the same as current directory, we don't have to do anything
+        if(new_blk_id == current_directory_block()){
+            std::cout << "Destination sub-directory is the same directory as the current one.\n";
+            return 0;
+        }
+
+        // If a file with the same exists in the destination sub-directory, abort
+        if(file_exists(new_blk_id, sourcepath) > 0){
+            std::cout << "File with name " << sourcepath << " already exists in destination sub-directory, aborting\n";
+            return 1;
+        }
+
+        // Read in data of destination sub-directory
         dir_entry new_blk[BLOCK_SIZE];
         disk.read(new_blk_id, (uint8_t*)new_blk);
         
@@ -352,6 +366,7 @@ FS::mv(std::string sourcepath, std::string destpath)
             return 1;
         }
 
+        // Update directory entry in desination directory
         dir_entry *new_entry = new_blk + empty_dir_entry;
 
         strcpy(new_entry->file_name,  file_entry->file_name);
@@ -393,7 +408,7 @@ int
 FS::rm(std::string filepath)
 {
     // Make sure the file exists
-    int file_index = file_exists(filepath);
+    int file_index = file_exists(current_directory_block(), filepath);
     if(file_index == -1){
         std::cout << "File does not exist.\n";
         return 1;
@@ -431,12 +446,12 @@ int
 FS::append(std::string filepath1, std::string filepath2)
 {
     // Make sure both files exists
-    int file_1_id = file_exists(filepath1);
+    int file_1_id = file_exists(current_directory_block(), filepath1);
     if(file_1_id == -1){
         std::cout << "File " << filepath1 << " does not exist\n";
         return 1;
     }
-    int file_2_id = file_exists(filepath2);
+    int file_2_id = file_exists(current_directory_block(), filepath2);
     if(file_2_id == -1){
         std::cout << "File " << filepath2 << " does not exist\n";
         return 1;
@@ -593,7 +608,7 @@ FS::cd(std::string dirpath)
     dir_entry blk[BLOCK_SIZE];
     disk.read(current_directory_block(), (uint8_t*)blk);
 
-    int file_idx = file_exists(dirpath);
+    int file_idx = file_exists(current_directory_block(), dirpath);
     if(file_idx == -1){
         std::cout << "Directory \"" << dirpath << "\" does not exist\n";
         return 1;
@@ -655,7 +670,7 @@ FS::chmod(std::string accessrights, std::string filepath)
 }
 
 int
-FS::file_exists(std::string filename)
+FS::file_exists(uint16_t directory_block, std::string filename)
 {
     int slash = filename.find("/");
     if (slash != -1){
@@ -665,7 +680,7 @@ FS::file_exists(std::string filename)
     }
 
     dir_entry blk[BLOCK_SIZE];
-    disk.read(current_directory_block(), (uint8_t*)blk);
+    disk.read(directory_block, (uint8_t*)blk);
 
     int i;
     for(i = 0; i < BLOCK_SIZE / sizeof(dir_entry); i++){
