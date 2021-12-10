@@ -320,7 +320,7 @@ FS::mv(std::string sourcepath, std::string destpath)
     // Make sure the file we're moving exists
     int file_index = file_exists(current_directory_block(), sourcepath);
     if(file_index == -1){
-        std::cout << "File does not exist.\n";
+        std::cout << "File \"" << sourcepath << "\" does not exist.\n";
         return 1;
     }
 
@@ -330,20 +330,41 @@ FS::mv(std::string sourcepath, std::string destpath)
 
     int dest_idx = file_exists(current_directory_block(), destpath);
 
-    // If the destination file exists
-    if(dest_idx != -1){ 
+    // If there is not a "/" in the name, then we are renaming a file
+    if(destpath.find('/') == -1 && dest_idx == -1) { 
 
-        // If the source file is TYPE_FILE then we're trying to rename source file but destination path exists, print error and return
-        if(blk[dest_idx].type == TYPE_FILE){
-            std::cout << "File \"" << blk[dest_idx].file_name << "\" already exists.\n";
+        // If a file with name destpath exists, abort
+        if(dest_idx != -1){
+            std::cout << "File \"" << destpath.c_str() << "\" already exists.\n";
             return 1;
         }
+
+        // Check if destination file name is not too long
+        if(destpath.length() >= 55){ // 56 - 1
+            std::cout << "Filename too long. The name of a file can be at most be 56 characters long\n";
+            return 1;
+        }
+        dir_entry *file_entry = blk + file_index;
+        // Copy the new name into the file's dir_entry
+        std::strcpy(file_entry->file_name, destpath.c_str());
+
+        disk.write(current_directory_block(), (uint8_t*)blk);
+        std::cout << "Successfully renamed " << sourcepath << " to " << file_entry->file_name << "\n";
+    }
+    else { // Else we're moving the file to a different directory 
+
+        // Find the block of destination sub-directory
+        int new_blk_id = find_final_block(current_directory_block(), destpath);
+
+        std::cout << "New block id: " << new_blk_id << "\n";
+
+        dir_entry new_blk[BLOCK_SIZE];
+        disk.read(new_blk_id, (uint8_t*)new_blk);
+
+        std::cout << dest_idx << "\n";
         
         // Else we're moving the file to a new sub-directory
         dir_entry *source_entry = blk + file_index;
-    
-        // Find the block of destination sub-directory
-        int new_blk_id = find_final_block(current_directory_block(), destpath);
 
         // If the destination sub-directory block is the same as current directory, we don't have to do anything
         if(new_blk_id == current_directory_block()){
@@ -356,10 +377,6 @@ FS::mv(std::string sourcepath, std::string destpath)
             std::cout << "File with name " << sourcepath << " already exists in destination sub-directory, aborting\n";
             return 1;
         }
-
-        // Read in data of destination sub-directory
-        dir_entry new_blk[BLOCK_SIZE];
-        disk.read(new_blk_id, (uint8_t*)new_blk);
         
         // Find an empty dir_entry in destination sub-directory
         int empty_dir_entry = find_empty_dir_entry_id(new_blk);
@@ -385,23 +402,8 @@ FS::mv(std::string sourcepath, std::string destpath)
         // Write new data to disk
         disk.write(current_directory_block(), (uint8_t*)blk);
         disk.write(new_blk_id, (uint8_t*)new_blk);
-        std::cout << "Successfully moved " << sourcepath << " to " << new_blk_id << "\n";
+        std::cout << "Successfully moved " << sourcepath << " to " << destpath << "\n";
     } 
-    // Else we are just renaming a file
-    else { 
-
-        // Check if destination file name is not too long
-        if(destpath.length() >= 55){ // 56 - 1
-            std::cout << "Filename too long. The name of a file can be at most be 56 characters long\n";
-            return 1;
-        }
-        dir_entry *file_entry = blk + file_index;
-        // Copy the new name into the file's dir_entry
-        std::strcpy(file_entry->file_name, destpath.c_str());
-
-        disk.write(current_directory_block(), (uint8_t*)blk);
-        std::cout << "Successfully renamed " << sourcepath << " to " << file_entry->file_name << "\n";
-    }
     return 0;
 }
 
@@ -640,15 +642,13 @@ FS::cd(std::string dirpath)
     dir_entry blk[BLOCK_SIZE];
     disk.read(current_directory_block(), (uint8_t*)blk);
 
-    int file_idx = file_exists(current_directory_block(), dirpath);
-    if(file_idx == -1){
-        std::cout << "Directory \"" << dirpath << "\" does not exist\n";
+    int final_block = find_final_block(current_directory_block(), dirpath);
+    if(final_block == -1){
+        std::cout << "Path " << dirpath << " is not a valid path.\n";
         return 1;
     }
 
-    dir_entry *file = blk + file_idx;
-
-    blk_curr_dir = file->first_blk;
+    blk_curr_dir = final_block;
     return 0;
 }
 
@@ -703,7 +703,16 @@ FS::chmod(std::string accessrights, std::string filepath)
 
 int
 FS::file_exists(uint16_t directory_block, std::string filename)
-{
+{       
+    if(filename.empty())
+        return -1;
+
+    // If it is an absolute path
+    if(filename.at(0) == '/'){
+        filename = filename.erase(0, 1);
+        return file_exists(ROOT_BLOCK, filename);
+    }
+
     // TODO: Change this please wtf
     int slash = filename.find("/");
     if (slash != -1){
@@ -762,8 +771,17 @@ FS::file_is_visible(dir_entry* file)
 int
 FS::find_final_block(int c_blk, std::string path)
 {
-    std::string buf;
+    if(path == "/"){
+        std::cout << "Is root\n";
+        return ROOT_BLOCK;
+    }
 
+    if(path.at(0) == '/'){
+        c_blk = ROOT_BLOCK;
+        path = path.erase(0, 1);
+    }
+
+    std::string buf;
     while(!path.empty()){
 
         int slash_id = path.find("/");
@@ -779,11 +797,18 @@ FS::find_final_block(int c_blk, std::string path)
         dir_entry curr_dir_entries[BLOCK_SIZE];
         disk.read(c_blk, (uint8_t*)curr_dir_entries);
 
+        int n_blk = -1;
+
         for(int i = 0; i < BLOCK_SIZE / sizeof(dir_entry); i++){
             if(buf == curr_dir_entries[i].file_name){
-                c_blk = curr_dir_entries[i].first_blk;
+                n_blk = curr_dir_entries[i].first_blk;
                 break;
             }
+        }
+        if(n_blk != -1){
+            c_blk = n_blk;
+        } else {
+            return -1;
         }
     }
     return c_blk;
