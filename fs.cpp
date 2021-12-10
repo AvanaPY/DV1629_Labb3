@@ -244,19 +244,39 @@ FS::ls()
 int
 FS::cp(std::string sourcepath, std::string destpath)
 {
-    if(file_exists(current_directory_block(), destpath) != -1){
-      std::cout << "File \"" << destpath << "\" already exists.\n";
-      return 1;
-    }
+    // Make sure the source file exists
     int source_file_id = file_exists(current_directory_block(), sourcepath);
     if(source_file_id == -1){
       std::cout << "File \"" << sourcepath << "\" does not exist.\n";
       return 1;
     }
-
+    
     // Read current directory
     dir_entry blk[BLOCK_SIZE];
     disk.read(current_directory_block(), (uint8_t*)blk);
+
+    // Make sure destination file does not exist
+    int dest_file_id = file_exists(current_directory_block(), destpath);
+
+    if(destpath.find("/") != -1 && dest_file_id == -1) { 
+        dir_entry *dest_entry = blk + dest_file_id;
+
+        if(dest_entry->type == TYPE_FILE){
+            std::cout << "File \"" << dest_entry->file_name << "\" already exists.\n";
+            return 1;
+        }
+
+        std::cout << "Copying file into directory...\n";
+        
+    } else { // Case where 
+
+        std::cout << "..." << "\n";
+    }
+
+    // int dest_dir_blk = find_final_block(current_directory_block(), destpath);
+    // int dest_file_exists = file_exists(dest_dir_blk, dest_file_name);
+
+    // std::cout << "dest_file_exists: " << dest_file_exists << "\n";
 
     // Make copy of dir_entry
     dir_entry file_entry = blk[source_file_id];
@@ -283,8 +303,8 @@ FS::cp(std::string sourcepath, std::string destpath)
     int blk_src = file_entry.first_blk;
     int blk_dest = -1;
 
-    // TODO: Perhaps count the number of blocks required and make sure that there's enough space on the disk before we start copying the file
-
+    // TODO: Perhaps count the number of blocks required and make sure 
+    // that there's enough space on the disk before we start copying the file
     int blk_empty;
     while(blk_src != FAT_EOF) { // While we have not reached EOF
         // Find empty block
@@ -377,7 +397,8 @@ FS::mv(std::string sourcepath, std::string destpath)
         }
 
         // If a file with the same name as source already exists in the destination sub-directory, abort
-        if(file_exists(new_blk_id, sourcepath) > 0){
+        std::cout << "Source path: " << sourcepath << "\n";
+        if(file_exists(new_blk_id, sourcepath) != -1){
             std::cout << "File with name " << sourcepath << " already exists in destination sub-directory, aborting\n";
             return 1;
         }
@@ -721,14 +742,14 @@ FS::file_exists(uint16_t directory_block, std::string filename)
     // We put this here at some point but don't really remember what it does
     // but I have learned the hard way to not delete code, so it is just commented out
     // Sitting here, waiting for the inevitable time where it is removed, or breaks our code.
-    
-    // int slash = filename.find("/");
-    // if (slash != -1){
-    //     filename = filename.substr(0, slash); // If there is a slash indicating a full path, 
-    //                                           // only pick the first one
-    //                                           // i.e dir/dir2 -> dir
-    //     std::cout << "Changed to " << filename << "\n";
-    // }
+
+    int slash = filename.find("/");
+    if (slash != -1){
+        filename = filename.substr(0, slash); // If there is a slash indicating a full path, 
+                                              // only pick the first one
+                                              // i.e dir/dir2 -> dir
+        std::cout << "Changed to " << filename << "\n";
+    }
 
     dir_entry blk[BLOCK_SIZE];
     disk.read(directory_block, (uint8_t*)blk);
