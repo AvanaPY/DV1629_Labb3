@@ -718,13 +718,17 @@ FS::file_exists(uint16_t directory_block, std::string filename)
         return file_exists(ROOT_BLOCK, filename);
     }
 
-    // TODO: Change this please wtf
-    int slash = filename.find("/");
-    if (slash != -1){
-        filename = filename.substr(0, slash); // If there is a slash indicating a full path, 
-                                              // only pick the first one
-                                              // i.e dir/dir2 -> dir
-    }
+    // We put this here at some point but don't really remember what it does
+    // but I have learned the hard way to not delete code, so it is just commented out
+    // Sitting here, waiting for the inevitable time where it is removed, or breaks our code.
+    
+    // int slash = filename.find("/");
+    // if (slash != -1){
+    //     filename = filename.substr(0, slash); // If there is a slash indicating a full path, 
+    //                                           // only pick the first one
+    //                                           // i.e dir/dir2 -> dir
+    //     std::cout << "Changed to " << filename << "\n";
+    // }
 
     dir_entry blk[BLOCK_SIZE];
     disk.read(directory_block, (uint8_t*)blk);
