@@ -147,6 +147,12 @@ FS::cat(std::string filepath)
     // Find the directory block id where the file resides
     int file_block = find_final_block(current_directory_block(), filepath);
 
+    // If we cannot calculate which block the filepath leads to, something's wrong
+    if(file_block == -1){
+        std::cout << "File does not exist.\n";
+        return -1;
+    }
+
     // Make sure the file exists
     int file_idx = file_exists(file_block, filename);
     if(file_idx == -1){
@@ -809,39 +815,52 @@ FS::file_is_visible(dir_entry* file)
 int
 FS::find_final_block(int c_blk, std::string path)
 {
+    // If path is just root, return root, easy.
     if(path == "/"){
         return ROOT_BLOCK;
     }
 
+    // If path starts at root, set current block to root and pretend that's what the user started with
     if(path.at(0) == '/'){
         c_blk = ROOT_BLOCK;
         path = path.erase(0, 1);
     }
 
-    std::string buf;
+    std::string buf;        // Buffer for the current directory name to look for
+                            // e.g given a path "abc/dir/123", this would first have value abc, then dir, then 123
     while(!path.empty()){
 
         int slash_id = path.find("/");
 
+        // If there's a slash, buf will be everything up until slash, excluding the slash
         if(slash_id != -1){
             buf = path.substr(0, slash_id);
             path.erase(0, slash_id + 1);
-        } else {
+        } 
+        // Else buf is just what's left
+        else {
             buf = path;
             path.erase(0, path.length());
         }
 
+        // Read the current block to look at
         dir_entry curr_dir_entries[BLOCK_SIZE];
         disk.read(c_blk, (uint8_t*)curr_dir_entries);
 
+        // Look at each entry and find the directory with the same name as in buf and update current block
+        bool found_next_block = false;
         for(int i = 0; i < BLOCK_SIZE / sizeof(dir_entry); i++){
             if(buf == curr_dir_entries[i].file_name){
-                if(curr_dir_entries[i].type == TYPE_DIR)
+                if(curr_dir_entries[i].type == TYPE_DIR){
                     c_blk = curr_dir_entries[i].first_blk;
-                else
-                    return c_blk;
+                    found_next_block = true;
+                }
                 break;
             }
+        }
+        if(!found_next_block){
+            std::cout << "Invalid path!\n";
+            return -1;
         }
     }
     return c_blk;
