@@ -311,51 +311,48 @@ FS::cp(std::string sourcepath, std::string destpath)
 int
 FS::mv(std::string sourcepath, std::string destpath)
 {
-    if(destpath.length() >= 55){ // 56 - 1
-        std::cout << "Filename too long. The name of a file can be at most be 56 characters long\n";
-        return 1;
-    }
-
-    // Make sure the file exists
+    // Make sure the file we're moving exists
     int file_index = file_exists(sourcepath);
     if(file_index == -1){
         std::cout << "File does not exist.\n";
         return 1;
     }
+
     // Load the current directory
     dir_entry blk[BLOCK_SIZE];
     disk.read(current_directory_block(), (uint8_t*)blk);
 
     int dest_idx = file_exists(destpath);
 
-    dir_entry dest_file;
+    dir_entry *file_entry;
 
-    // If the file exists, check if it's TYPE_FILE or TYPE_DIR
+    // If the destination file exists
     if(dest_idx != -1){ 
-        dest_file = blk[dest_idx];
+        file_entry = blk + dest_idx;
 
-        if(dest_file.type == TYPE_FILE){
-            std::cout << "File \"" << destpath << "\" already exists.\n";
+        // If the source file is TYPE_FILE then we're trying to it but destination path exists, print error and return
+        if(file_entry->type == TYPE_FILE){
+            std::cout << "File \"" << file_entry->file_name << "\" already exists.\n";
             return 1;
         }
-    }
-
-    // At this point, if dest_idx != -1, then the file exists and it's a directory
-    if(dest_idx != -1){
+        
+        // Else we're moving the file to a new sub-directory
         dir_entry *file_entry = blk + file_index;
     
+        // Find the block of destination sub-directory
         int new_blk_id = find_final_block(current_directory_block(), destpath);
-
         dir_entry new_blk[BLOCK_SIZE];
         disk.read(new_blk_id, (uint8_t*)new_blk);
         
+        // Find an empty dir_entry in destination sub-directory
         int empty_dir_entry = find_empty_dir_entry_id(new_blk);
+
+        if(empty_dir_entry == -1){
+            std::cout << "No free space for file in destination sub-directory\n";
+            return 1;
+        }
+
         dir_entry *new_entry = new_blk + empty_dir_entry;
-
-        std::cout << "Updating " << new_entry->file_name << " to " << file_entry->file_name << "\n";
-
-        std::cout << strcmp(blk[0].file_name, new_blk[0].file_name) << "\n";
-
 
         strcpy(new_entry->file_name,  file_entry->file_name);
         new_entry->size             = file_entry->size;
@@ -367,14 +364,21 @@ FS::mv(std::string sourcepath, std::string destpath)
         file_entry->size = 0;
         file_entry->first_blk = 0;
 
-        std::cout << "New file name: " << new_entry->file_name << "\n";
-
         // Write new data to disk
         disk.write(current_directory_block(), (uint8_t*)blk);
         disk.write(new_blk_id, (uint8_t*)new_blk);
         std::cout << "Successfully moved " << sourcepath << " to " << new_blk_id << "\n";
-    } else {
-        dir_entry *file_entry = blk + file_index;
+    } 
+    // Else we are just renaming a file
+    else { 
+
+        // Check if destination file name is not too long
+        if(destpath.length() >= 55){ // 56 - 1
+            std::cout << "Filename too long. The name of a file can be at most be 56 characters long\n";
+            return 1;
+        }
+
+        file_entry = blk + file_index;
         // Copy the new name into the file's dir_entry
         std::strcpy(file_entry->file_name, destpath.c_str());
 
