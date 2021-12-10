@@ -722,9 +722,10 @@ FS::pwd()
         dir_entry blk[BLOCK_SIZE];
         do {
             disk.read(blk_id, (uint8_t*)blk);
-            // First entry in a non-root direcotry should always be the .. directory
+            // First entry in a non-root directory should always be the .. directory
             dir_entry entry = blk[0];
 
+            // Read the parent directory block
             disk.read(entry.first_blk, (uint8_t*)blk);
 
             // Iterate over all dir entries in parent directory 
