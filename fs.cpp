@@ -319,30 +319,22 @@ FS::cp(std::string sourcepath, std::string destpath)
         return 1;
     }
 
-    std::cout << "Copying file \"" << sourcepath << "\" to \"" << destpath << "\"\n";
-    std::cout << "Copying from block " << current_directory_block() << " to block " << dest_blk_id << "\n";
-    std::cout << "Copying to entry id " << free_entry_id << "\n";
-
+    // Update the free entry in destination directory with the new information
     dir_entry *dest_entry = dest_blk + free_entry_id;
-
-
     strcpy(dest_entry->file_name, copied_file_name.c_str());
     dest_entry->size = blk[source_file_id].size;
     dest_entry->type = blk[source_file_id].type;
     dest_entry->access_rights = blk[source_file_id].access_rights;
 
-    // For each block, copy the data to another block
-
-    uint8_t blk_buf[BLOCK_SIZE];
+    uint8_t blk_buf[BLOCK_SIZE];                 // A buffer for file contents
     int blk_src = blk[source_file_id].first_blk; // The block we're reading from
-    int blk_dest = -1;                  // The block we're reading to
+    int blk_dest = -1;                           // The block we're reading to
 
-    // TODO: Perhaps count the number of blocks required and make sure 
-    // that there's enough space on the disk before we start copying the file
-    int blk_empty;
+    // This while loops copies the entire contents of a file to new blocks
+    // as well as updates the FAT with accurate information 
     while(blk_src != FAT_EOF) { // While we have not reached EOF
         // Find empty block
-        blk_empty = find_empty_block_id();
+        int blk_empty = find_empty_block_id();
 
         fat[blk_empty] = FAT_EOF;
         if(blk_dest == -1)
@@ -351,7 +343,7 @@ FS::cp(std::string sourcepath, std::string destpath)
             fat[blk_dest] = blk_empty;
         blk_dest = blk_empty;
 
-        if(blk_dest <= 1) { // This should never happen but who know
+        if(blk_dest <= 1) { // This should never happen but who knows
             std::cout << "Unaccounted-for error: blk_dest <= 1 (" << blk_dest << "). This may indicate that there's no more space on the disk.\n";
             return 1;
         }
@@ -859,18 +851,14 @@ FS::find_final_block(int c_blk, std::string path)
         dir_entry curr_dir_entries[BLOCK_SIZE];
         disk.read(c_blk, (uint8_t*)curr_dir_entries);
 
-        int n_blk = -1;
-
         for(int i = 0; i < BLOCK_SIZE / sizeof(dir_entry); i++){
             if(buf == curr_dir_entries[i].file_name){
-                if(curr_dir_entries[i].type == TYPE_FILE)
-                    break;
-                n_blk = curr_dir_entries[i].first_blk;
+                if(curr_dir_entries[i].type == TYPE_DIR)
+                    c_blk = curr_dir_entries[i].first_blk;
+                else
+                    return c_blk;
                 break;
             }
-        }
-        if(n_blk != -1){
-            c_blk = n_blk;
         }
     }
     return c_blk;
