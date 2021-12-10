@@ -258,50 +258,84 @@ FS::cp(std::string sourcepath, std::string destpath)
     // Make sure destination file does not exist
     int dest_file_id = file_exists(current_directory_block(), destpath);
 
-    if(destpath.find("/") != -1 && dest_file_id == -1) { 
-        dir_entry *dest_entry = blk + dest_file_id;
+    std::string copied_file_name;
 
-        if(dest_entry->type == TYPE_FILE){
-            std::cout << "File \"" << dest_entry->file_name << "\" already exists.\n";
+    int dest_blk_id = -1;
+   
+   
+    // The following if-else case determines the file name of the new file
+    // as well as which directory to copy it to
+    if (destpath.find("/") != -1){                                              
+
+        dest_blk_id = find_final_block(current_directory_block(), destpath);       
+
+        if(dest_blk_id == current_directory_block()){                              
+            std::cout << "Destination sub-directory is the same directory as the current one.\n";
             return 1;
         }
 
-        std::cout << "Copying file into directory...\n";
-        
-    } else { // Case where 
+        copied_file_name = sourcepath;
 
-        std::cout << "..." << "\n";
+    } else {                                                                    
+
+        dir_entry* dest_file_entry = blk + dest_file_id;
+        if(dest_file_id != -1){
+
+            // If our destination file exists and is a file, abort
+            if(dest_file_entry->type == TYPE_FILE){
+                std::cout << "File \"" << destpath << "\" already exists.\n";
+                return 1;
+            }
+            // Else destination file is a directory 
+            // Copy the file to the new directory with name sourcepath
+            
+            get_file_name_from_path(sourcepath, &copied_file_name);
+            dest_blk_id = dest_file_entry->first_blk;
+
+        } else {
+
+            // If our destination file does not exist
+            //  - Copy the file to current directory with name destpath
+            get_file_name_from_path(destpath, &copied_file_name);
+            dest_blk_id = current_directory_block();
+        }
+
+    }
+    
+    if(file_exists(dest_blk_id, copied_file_name) != -1){
+        std::cout << "File with name " << copied_file_name << " already exists in destination sub-directory, aborting\n";
+        return 1;
     }
 
-    // int dest_dir_blk = find_final_block(current_directory_block(), destpath);
-    // int dest_file_exists = file_exists(dest_dir_blk, dest_file_name);
+    std::cout << "New file name: " << copied_file_name << "\n";
 
-    // std::cout << "dest_file_exists: " << dest_file_exists << "\n";
+    // Load destination directory
+    dir_entry dest_blk[BLOCK_SIZE];
+    disk.read(dest_blk_id, (uint8_t*)dest_blk);
 
-    // Make copy of dir_entry
-    dir_entry file_entry = blk[source_file_id];
-
-    int free_entry_id = find_empty_dir_entry_id(blk);
-
+    int free_entry_id = find_empty_dir_entry_id(dest_blk);
     if(free_entry_id == -1){
         std::cout << "No free space in directory to copy file." << "\n";
         return 1;
     }
 
-    dir_entry *copy_entry = blk + free_entry_id;
+    std::cout << "Copying file \"" << sourcepath << "\" to \"" << destpath << "\"\n";
+    std::cout << "Copying from block " << current_directory_block() << " to block " << dest_blk_id << "\n";
+    std::cout << "Copying to entry id " << free_entry_id << "\n";
 
-    for(int i = 0; i < 56; i++)
-      copy_entry->file_name[i] = 0;
-    strcpy(copy_entry->file_name, destpath.c_str());
-    copy_entry->size = file_entry.size;
-    copy_entry->type = file_entry.type;
-    copy_entry->access_rights = file_entry.access_rights;
+    dir_entry *dest_entry = dest_blk + free_entry_id;
+
+
+    strcpy(dest_entry->file_name, copied_file_name.c_str());
+    dest_entry->size = blk[source_file_id].size;
+    dest_entry->type = blk[source_file_id].type;
+    dest_entry->access_rights = blk[source_file_id].access_rights;
 
     // For each block, copy the data to another block
 
     uint8_t blk_buf[BLOCK_SIZE];
-    int blk_src = file_entry.first_blk;
-    int blk_dest = -1;
+    int blk_src = blk[source_file_id].first_blk; // The block we're reading from
+    int blk_dest = -1;                  // The block we're reading to
 
     // TODO: Perhaps count the number of blocks required and make sure 
     // that there's enough space on the disk before we start copying the file
@@ -312,7 +346,7 @@ FS::cp(std::string sourcepath, std::string destpath)
 
         fat[blk_empty] = FAT_EOF;
         if(blk_dest == -1)
-            copy_entry->first_blk = blk_empty;
+            dest_entry->first_blk = blk_empty;
         else 
             fat[blk_dest] = blk_empty;
         blk_dest = blk_empty;
@@ -330,8 +364,8 @@ FS::cp(std::string sourcepath, std::string destpath)
         blk_src = fat[blk_src];
     }
                                   
-    // Update the copied dir_entry
-    disk.write(current_directory_block(), (uint8_t*)blk);
+    // WRITE TO DISK
+    disk.write(dest_blk_id, (uint8_t*)dest_blk);
     disk.write(FAT_BLOCK, (uint8_t*)fat);
     std::cout << "Successfully copied " << sourcepath << " into " << destpath << "\n";
    return 0;
@@ -748,7 +782,6 @@ FS::file_exists(uint16_t directory_block, std::string filename)
         filename = filename.substr(0, slash); // If there is a slash indicating a full path, 
                                               // only pick the first one
                                               // i.e dir/dir2 -> dir
-        std::cout << "Changed to " << filename << "\n";
     }
 
     dir_entry blk[BLOCK_SIZE];
