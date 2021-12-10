@@ -148,6 +148,11 @@ FS::cat(std::string filepath)
 
     dir_entry e = blk[i];
 
+    if(e.type == TYPE_DIR){
+        std::cout << "Cannot cat a directory\n";
+        return 1;
+    }
+
     char *cblk = (char*)blk;
     int block = e.first_blk;
     while(block != FAT_EOF){
@@ -538,6 +543,10 @@ FS::append(std::string filepath1, std::string filepath2)
 int
 FS::mkdir(std::string dirpath)
 {
+    if(file_exists(current_directory_block(), dirpath)){
+        std::cout << "A directory with name " << dirpath << " already exists.\n";
+        return 1;
+    }
     // Load the current directory directory
     dir_entry blk[BLOCK_SIZE];
     disk.read(current_directory_block(), (uint8_t*)blk);
