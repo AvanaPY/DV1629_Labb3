@@ -328,6 +328,13 @@ FS::mv(std::string sourcepath, std::string destpath)
     dir_entry blk[BLOCK_SIZE];
     disk.read(current_directory_block(), (uint8_t*)blk);
 
+    // Check if the source file is a directory, we don't want to move those around
+    dir_entry* source_file = blk + file_index;
+    if(source_file->type == TYPE_DIR){
+        std::cout << "Cannot mv file of type directory\n";
+        return 1;
+    }
+
     int dest_idx = file_exists(current_directory_block(), destpath);
 
     // If there is not a "/" in the name, then we are renaming a file
