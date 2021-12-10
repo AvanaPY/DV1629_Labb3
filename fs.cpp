@@ -64,8 +64,11 @@ FS::create(std::string filepath)
       return 1;
     }
 
+    // GATHER USER INPUT
+
     std::string accum;
     std::string line;
+    // A loop that accumulates user input text into one single line of text.
     for(;;){
         std::getline(std::cin, line);
 
@@ -84,50 +87,52 @@ FS::create(std::string filepath)
     // Write data
     char *c_accum = (char*)accum.c_str();
     int bytes_to_write = accum.length() + 1;
-    int first_block = -1, block = -1, previous_block = -1;
+    int first_block = -1,       // Keep track of which block the file starts on
+        block = -1,             // Which block we're writing to next
+        previous_block = -1;    // Which block we wrote to last iteration
+
     while(bytes_to_write > 0){ // While there's data to write
 
-        // Find an empty block
+        // Find an empty block to write data to
         block = find_empty_block_id();
-
         disk.write(block, (uint8_t*)c_accum);
 
+        // Mark the fat table and mark the now-full block as EOF
         fat[block] = FAT_EOF;
+
         bytes_to_write -= BLOCK_SIZE;
         c_accum += BLOCK_SIZE;
 
+        // If this is not our first loop
         if(previous_block > 0)
             fat[previous_block] = block;
 
+        // If this is our first loop, set first_block equal to block
         if(first_block == -1)
             first_block = block;
         previous_block = block;
     }
 
-    // Update directory data
+    // UPDATE DIRECTORY DATA
+
+    // Load current directory entries
     dir_entry blk[BLOCK_SIZE];
     disk.read(current_directory_block(), (uint8_t*)blk);
 
-    int empty_entry = find_empty_dir_entry_id(blk);
-    dir_entry *e = blk + empty_entry;
+    // Find an empty entry to populate
+    int empty_entry_id = find_empty_dir_entry_id(blk);
+    dir_entry *empty_entry = blk + empty_entry_id;
 
-    for(int i = 0; i < 55; i++){
-        if(i < filepath.size())
-          e->file_name[i] = filepath[i];
-        else
-          e->file_name[i] = 0;
-    }
-    e->file_name[55] = 0;
-
-    e->size = (uint32_t)(accum.length() + 1);
-    e->first_blk = first_block;
-    e->type = TYPE_FILE;
-    e->access_rights = READ | WRITE | EXECUTE;
+    strcpy(empty_entry->file_name, filepath.c_str());
+    empty_entry->size           = (uint32_t)(accum.length() + 1);
+    empty_entry->first_blk      = first_block;
+    empty_entry->type           = TYPE_FILE;
+    empty_entry->access_rights  = READ | WRITE | EXECUTE;
 
     disk.write(current_directory_block(), (uint8_t*)blk);
     disk.write(FAT_BLOCK, (uint8_t*)fat);
 
-    std::cout << "File: \"" <<  e->file_name << "\"\n" << "Size: " << e->size << "\n";
+    std::cout << "File: \"" <<  empty_entry->file_name << "\"\n" << "Size: " << empty_entry->size << "\n";
     return 0;
 }
 
@@ -135,9 +140,10 @@ FS::create(std::string filepath)
 int
 FS::cat(std::string filepath)
 {
-    std::string filename;
-    get_file_name_from_path(filepath, &filename);
-    chop_file_name(&filepath);
+    std::string filename;                           
+    get_file_name_from_path(filepath, &filename);   // The file name
+    chop_file_name(&filepath);                      // The path to the file excluding the file's name
+
     // Find the directory block id where the file resides
     int file_block = find_final_block(current_directory_block(), filepath);
 
@@ -169,7 +175,7 @@ FS::cat(std::string filepath)
         block = fat[block];
         std::cout << s;
     }
-    std::cout << "\n";
+    std::cout << "\n"; // New line for good luck
 
     return 0;
 }
@@ -178,57 +184,39 @@ FS::cat(std::string filepath)
 int
 FS::ls()
 {
-
-    // // TEMPORARY WRITE OUT FAT STATUS
-    for(int i = 0; i < 16; i++){
-        std::string s = std::to_string(i);
-
-        s.append(4 - s.length(), ' ');
-
-        std::cout << s.c_str();
-
-    }
-    std::cout << "\n";
-    for(int i = 0; i < 16; i++){
-        std::string s = std::to_string(fat[i]);
-
-        s.append(4 - s.length(), ' ');
-
-        std::cout << s.c_str();
-
-    }
-    std::cout << "\n";
-
+    // Load the current directory
     dir_entry blk[BLOCK_SIZE];
     disk.read(current_directory_block(), (uint8_t*)blk);
 
-    std::string str;
-    std::cout << "    Type    Size    Name\n";
+    std::string str;                            // String object of what to print out
+    std::cout << "    Type    Size    Name\n";  // Layout
     for(int i = 0; i < BLOCK_SIZE / sizeof(dir_entry); i++){
-        if(!file_is_visible(blk + i))
+        if(!file_is_visible(blk + i))           // Ignore any files that are not used
             continue;
-        if(blk[i].type == TYPE_DIR){
+
+        if(blk[i].type == TYPE_DIR){                // If dir... 
 
             str = std::to_string(i);
+
             str.append(4 - str.length(), ' ');
+            str.append("Dir");                      // type is dir
 
-            str.append("Dir");
-            str.append(12 - str.length(), ' ');
-
-            str.append("-");
+            str.append(12 - str.length(), ' '); 
+            str.append("-");                        // size is -
 
             str.append(20 - str.length(), ' ');
             str.append(blk[i].file_name);
 
             std::cout << str << "\n";
-        } else if(blk[i].type == TYPE_FILE) {
+        } else if(blk[i].type == TYPE_FILE) {       // If file...
+
             str = std::to_string(i);
+
             str.append(4 - str.length(), ' ');
+            str.append("File");                     // type is File
 
-            str.append("File");
             str.append(12 - str.length(), ' ');
-
-            str.append(std::to_string(blk[i].size));
+            str.append(std::to_string(blk[i].size));// size is the size of the file
 
             str.append(20 - str.length(), ' ');
             str.append(blk[i].file_name);
@@ -259,37 +247,34 @@ FS::cp(std::string sourcepath, std::string destpath)
     // Make sure destination file does not exist
     int dest_file_id = file_exists(current_directory_block(), destpath);
 
-    std::string copied_file_name;
-
-    int dest_blk_id = -1;
-   
+    std::string copied_file_name;   // Final name of the new copied file
+    int dest_blk_id = -1;           // Block number of the directory we're copying to
    
     // The following if-else case determines the file name of the new file
     // as well as which directory to copy it to
-    if (destpath.find("/") != -1){                                              
+    if (destpath.find("/") != -1){                  
+        // If the destpath includes any "/" then we're copying a file to another directory                           
 
         dest_blk_id = find_final_block(current_directory_block(), destpath);       
-
         if(dest_blk_id == current_directory_block()){                              
             std::cout << "Destination sub-directory is the same directory as the current one.\n";
             return 1;
         }
-
-        copied_file_name = sourcepath;
-
+        copied_file_name = sourcepath; //... so we put the name of the new file to the same name as source file
     } else {                                                                    
+        // If the destpath does not include any "/" then we know we're just copying to the current directory
 
-        dir_entry* dest_file_entry = blk + dest_file_id;
         if(dest_file_id != -1){
+            dir_entry* dest_file_entry = blk + dest_file_id;
 
             // If our destination file exists and is a file, abort
             if(dest_file_entry->type == TYPE_FILE){
                 std::cout << "File \"" << destpath << "\" already exists.\n";
                 return 1;
             }
+
             // Else destination file is a directory 
             // Copy the file to the new directory with name sourcepath
-            
             get_file_name_from_path(sourcepath, &copied_file_name);
             dest_blk_id = dest_file_entry->first_blk;
 
@@ -369,7 +354,7 @@ FS::cp(std::string sourcepath, std::string destpath)
 int
 FS::mv(std::string sourcepath, std::string destpath)
 {
-    // Make sure the file we're moving exists
+    // Make sure the source file exists
     int file_index = file_exists(current_directory_block(), sourcepath);
     if(file_index == -1){
         std::cout << "File \"" << sourcepath << "\" does not exist.\n";
@@ -380,7 +365,7 @@ FS::mv(std::string sourcepath, std::string destpath)
     dir_entry blk[BLOCK_SIZE];
     disk.read(current_directory_block(), (uint8_t*)blk);
 
-    // Check if the source file is a directory, we don't want to move those around
+    // Check if the source file is a directory, we don't want to move directories around
     dir_entry* source_file = blk + file_index;
     if(source_file->type == TYPE_DIR){
         std::cout << "Cannot mv file of type directory\n";
@@ -389,7 +374,7 @@ FS::mv(std::string sourcepath, std::string destpath)
 
     int dest_idx = file_exists(current_directory_block(), destpath);
 
-    // If there is not a "/" in the name, then we are renaming a file
+    // If there is not a "/" in the name and destpath does not exist, then we are renaming sourcefile
     if(destpath.find('/') == -1 && dest_idx == -1) { 
 
         // If a file with name destpath exists, abort
@@ -770,25 +755,22 @@ FS::file_exists(uint16_t directory_block, std::string filename)
     // but I have learned the hard way to not delete code, so it is just commented out
     // Sitting here, waiting for the inevitable time where it is removed, or breaks our code.
 
-    int slash = filename.find("/");
-    if (slash != -1){
-        filename = filename.substr(0, slash); // If there is a slash indicating a full path, 
-                                              // only pick the first one
-                                              // i.e dir/dir2 -> dir
-    }
+    // int slash = filename.find("/");
+    // if (slash != -1){
+    //     filename = filename.substr(0, slash); // If there is a slash indicating a full path, 
+    //                                           // only pick the first one
+    //                                           // i.e dir/dir2 -> dir
+    // }
 
     dir_entry blk[BLOCK_SIZE];
     disk.read(directory_block, (uint8_t*)blk);
 
-    int i;
-    for(i = 0; i < BLOCK_SIZE / sizeof(dir_entry); i++){
+    for(int i = 0; i < BLOCK_SIZE / sizeof(dir_entry); i++){
         if(file_is_visible(blk + i) && std::string(blk[i].file_name) == filename){
-            break;
+            return i;
         }
     }
-    if(i >= BLOCK_SIZE / sizeof(dir_entry))
-        i = -1;
-    return i;
+    return -1;
 }
 
 int 
