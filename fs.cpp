@@ -3,6 +3,7 @@
 #include <string>
 #include <cstring>
 
+// Current directory 
 int blk_curr_dir = ROOT_BLOCK;
 
 FS::FS()
@@ -831,6 +832,8 @@ FS::chmod(std::string accessrights, std::string filepath)
     return 0;
 }
 
+// Returns the index of a file in a directory block
+// if the file does not exist then it returns -1
 int
 FS::file_exists(uint16_t directory_block, std::string filename)
 {       
@@ -865,6 +868,7 @@ FS::file_exists(uint16_t directory_block, std::string filename)
     return -1;
 }
 
+// Returns an empty ID for a directory entry in a list of directory entries
 int 
 FS::find_empty_dir_entry_id(dir_entry* entries)
 {
@@ -875,6 +879,7 @@ FS::find_empty_dir_entry_id(dir_entry* entries)
     return -1;
 }
 
+// Returns the block number of the first free block on the disk
 int 
 FS::find_empty_block_id()
 {
@@ -885,12 +890,16 @@ FS::find_empty_block_id()
     return -1;
 }
 
+// Returns the current directory block
 int
 FS::current_directory_block()
 {
     return blk_curr_dir;
 }
 
+// Returns whether or not a file or directory is visible
+// A file is considered visible if its size is greater than 0,
+// and a directory is considered visible if its size is not 0
 bool
 FS::file_is_visible(dir_entry* file)
 {
@@ -898,7 +907,7 @@ FS::file_is_visible(dir_entry* file)
             (file->type == TYPE_DIR  && file->size != 0);
 }
 
-// find_final_block returns the final block in a path that only contains directories
+// Returns the final block in a path that only contains directories
 int
 FS::find_final_block(int c_blk, std::string path)
 {
@@ -955,6 +964,8 @@ FS::find_final_block(int c_blk, std::string path)
     return c_blk;
 }
 
+// Chops off the file name of a path
+// e.g turns /dir/dir2/file into /dir/dir2
 int
 FS::chop_file_name(std::string* filepath)
 {
@@ -973,6 +984,8 @@ FS::chop_file_name(std::string* filepath)
     return 0;
 }
 
+// Returns the last name in a path, assuming it's a file
+// e.g turns /dir/dir2/file into file
 int
 FS::get_file_name_from_path(std::string filepath, std::string *filename)
 {
