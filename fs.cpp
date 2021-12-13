@@ -144,6 +144,8 @@ FS::cat(std::string filepath)
     get_file_name_from_path(filepath, &filename);   // The file name
     chop_file_name(&filepath);                      // The path to the file excluding the file's name
 
+    std::cout << "New file path post-chop: " << filepath << "\n";
+
     // Find the directory block id where the file resides
     int file_block = find_final_block(current_directory_block(), filepath);
 
@@ -195,7 +197,7 @@ FS::ls()
     disk.read(current_directory_block(), (uint8_t*)blk);
 
     std::string str;                            // String object of what to print out
-    std::cout << "    Type    Size    Name\n";  // Layout
+    std::cout << "    Type    Size    accessrights    Name\n";  // Layout
     for(int i = 0; i < BLOCK_SIZE / sizeof(dir_entry); i++){
         if(!file_is_visible(blk + i))           // Ignore any files that are not used
             continue;
@@ -211,6 +213,11 @@ FS::ls()
             str.append("-");                        // size is -
 
             str.append(20 - str.length(), ' ');
+            str.append((blk[i].access_rights & READ)    ? "r" : "-"); 
+            str.append((blk[i].access_rights & WRITE)   ? "w" : "-"); 
+            str.append((blk[i].access_rights & EXECUTE) ? "x" : "-"); 
+
+            str.append(36 - str.length(), ' ');
             str.append(blk[i].file_name);
 
             std::cout << str << "\n";
@@ -225,6 +232,11 @@ FS::ls()
             str.append(std::to_string(blk[i].size));// size is the size of the file
 
             str.append(20 - str.length(), ' ');
+            str.append((blk[i].access_rights & READ)    ? "r" : "-"); 
+            str.append((blk[i].access_rights & WRITE)   ? "w" : "-"); 
+            str.append((blk[i].access_rights & EXECUTE) ? "x" : "-"); 
+            
+            str.append(36 - str.length(), ' ');
             str.append(blk[i].file_name);
 
             std::cout << str << "\n";
@@ -754,7 +766,31 @@ FS::pwd()
 int
 FS::chmod(std::string accessrights, std::string filepath)
 {
-    std::cout << "FS::chmod(" << accessrights << "," << filepath << ")\n";
+    std::string file_name;
+    get_file_name_from_path(filepath, &file_name);
+
+    chop_file_name(&filepath);
+    int file_directory_block = find_final_block(current_directory_block(), filepath);
+
+    // Make sure target destination file exists
+    int file_index = file_exists(file_directory_block, file_name);
+    if(file_index == -1){
+      std::cout << "File \"" << file_name << "\" does not exists.\n";
+      return 1;
+    }
+
+    std::cout << "File index: " << file_index << "\n";
+
+    // Load the root directory
+    dir_entry blk[BLOCK_SIZE];
+    disk.read(file_directory_block, (uint8_t*)blk);
+
+    // Copy the new name into the file's dir_entry
+    dir_entry *file_entry = blk + file_index;
+    file_entry->access_rights = std::stoi(accessrights);
+
+    std::cout << "Changed permissions of " << file_name << " to " << std::to_string(file_entry->access_rights) << "\n";
+    disk.write(file_directory_block, (uint8_t*)blk);
     return 0;
 }
 
@@ -825,9 +861,14 @@ FS::file_is_visible(dir_entry* file)
             (file->type == TYPE_DIR  && file->size != 0);
 }
 
+// find_final_block returns the final block in a path that only contains directories
 int
 FS::find_final_block(int c_blk, std::string path)
 {
+    // If the path is empty, just return the current block
+    if(path.empty())
+        return c_blk;
+    
     // If path is just root, return root, easy.
     if(path == "/"){
         return ROOT_BLOCK;
@@ -882,12 +923,16 @@ FS::chop_file_name(std::string* filepath)
 {
     int last_slash_id = filepath->rfind('/');
 
-    if(last_slash_id != -1)
+    if(last_slash_id != -1) {
         filepath->erase(last_slash_id, filepath->length()); // Remove everything from slash and onwards
+        
+        // If the filepath is empty after chop, it means our path was an absolute path to root, e.g /dir, /file, etc
+        if(filepath->empty())
+            filepath->insert(0, "/");
+    } else {
+        filepath->erase(0, filepath->length());
+    }
 
-    // 
-    if(filepath->empty())
-        filepath->insert(0, "/");
     return 0;
 }
 
