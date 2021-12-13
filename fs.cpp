@@ -82,9 +82,6 @@ FS::create(std::string filepath)
         }
     }
 
-    // Write a line accross the screen to indicate the end of the file for the user
-    std::cout << "------------------------------------------------\n";
-
     // Write data
     char *c_accum = (char*)accum.c_str();
     int bytes_to_write = accum.length() + 1;
@@ -132,8 +129,6 @@ FS::create(std::string filepath)
 
     disk.write(current_directory_block(), (uint8_t*)blk);
     disk.write(FAT_BLOCK, (uint8_t*)fat);
-
-    std::cout << "File: \"" <<  empty_entry->file_name << "\"\n" << "Size: " << empty_entry->size << "\n";
     return 0;
 }
 
