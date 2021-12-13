@@ -201,46 +201,42 @@ FS::ls()
     disk.read(current_directory_block(), (uint8_t*)blk);
 
     std::string str;                            // String object of what to print out
-    std::cout << "    Type    Size    accessrights    Name\n";  // Layout
+    std::cout << "  Type    Size    accessrights    Name\n";  // Layout
     for(int i = 0; i < BLOCK_SIZE / sizeof(dir_entry); i++){
         if(!file_is_visible(blk + i))           // Ignore any files that are not used
             continue;
 
         if(blk[i].type == TYPE_DIR){                // If dir... 
 
-            str = std::to_string(i);
-
-            str.append(4 - str.length(), ' ');
+            str = "  ";
             str.append("Dir");                      // type is dir
 
-            str.append(12 - str.length(), ' '); 
+            str.append(10 - str.length(), ' '); 
             str.append("-");                        // size is -
 
-            str.append(20 - str.length(), ' ');
+            str.append(18 - str.length(), ' ');
             str.append((blk[i].access_rights & READ)    ? "r" : "-"); 
             str.append((blk[i].access_rights & WRITE)   ? "w" : "-"); 
             str.append((blk[i].access_rights & EXECUTE) ? "x" : "-"); 
 
-            str.append(36 - str.length(), ' ');
+            str.append(34 - str.length(), ' ');
             str.append(blk[i].file_name);
 
             std::cout << str << "\n";
         } else if(blk[i].type == TYPE_FILE) {       // If file...
 
-            str = std::to_string(i);
-
-            str.append(4 - str.length(), ' ');
+            str = "  ";
             str.append("File");                     // type is File
 
-            str.append(12 - str.length(), ' ');
+            str.append(10 - str.length(), ' ');
             str.append(std::to_string(blk[i].size));// size is the size of the file
 
-            str.append(20 - str.length(), ' ');
+            str.append(18 - str.length(), ' ');
             str.append((blk[i].access_rights & READ)    ? "r" : "-"); 
             str.append((blk[i].access_rights & WRITE)   ? "w" : "-"); 
             str.append((blk[i].access_rights & EXECUTE) ? "x" : "-"); 
             
-            str.append(36 - str.length(), ' ');
+            str.append(34 - str.length(), ' ');
             str.append(blk[i].file_name);
 
             std::cout << str << "\n";
