@@ -779,7 +779,12 @@ FS::chmod(std::string accessrights, std::string filepath)
       return 1;
     }
 
-    std::cout << "File index: " << file_index << "\n";
+    // Make sure access rights are valid
+    int new_access_rights = std::stoid(accessrights);
+    if(new_access_rights < 0 || new_access_rights > 7){
+        std::cout << "Access rights are not valid\n";
+        return 1;
+    }
 
     // Load the root directory
     dir_entry blk[BLOCK_SIZE];
@@ -787,10 +792,10 @@ FS::chmod(std::string accessrights, std::string filepath)
 
     // Copy the new name into the file's dir_entry
     dir_entry *file_entry = blk + file_index;
-    file_entry->access_rights = std::stoi(accessrights);
+    file_entry->access_rights = new_access_rights;
 
-    std::cout << "Changed permissions of " << file_name << " to " << std::to_string(file_entry->access_rights) << "\n";
     disk.write(file_directory_block, (uint8_t*)blk);
+    std::cout << "Changed permissions of " << file_name << " to " << std::to_string(file_entry->access_rights) << "\n";
     return 0;
 }
 
