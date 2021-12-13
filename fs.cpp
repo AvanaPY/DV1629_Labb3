@@ -149,7 +149,7 @@ FS::cat(std::string filepath)
 
     // If we cannot calculate which block the filepath leads to, something's wrong
     if(file_block == -1){
-        std::cout << "File does not exist.\n";
+        std::cout << "File " << filename.c_str() << " does not exist.\n";
         return -1;
     }
 
@@ -494,7 +494,7 @@ FS::rm(std::string filepath)
     // Make sure the file exists
     int file_index = file_exists(current_directory_block(), filepath);
     if(file_index == -1){
-        std::cout << "File does not exist.\n";
+        std::cout << "File " << filepath << " does not exist.\n";
         return 1;
     }
     
