@@ -127,7 +127,7 @@ FS::create(std::string filepath)
     empty_entry->size           = (uint32_t)(accum.length() + 1);
     empty_entry->first_blk      = first_block;
     empty_entry->type           = TYPE_FILE;
-    empty_entry->access_rights  = READ | WRITE | EXECUTE;
+    empty_entry->access_rights  = READ | WRITE;
 
     disk.write(current_directory_block(), (uint8_t*)blk);
     disk.write(FAT_BLOCK, (uint8_t*)fat);
@@ -143,8 +143,6 @@ FS::cat(std::string filepath)
     std::string filename;                           
     get_file_name_from_path(filepath, &filename);   // The file name
     chop_file_name(&filepath);                      // The path to the file excluding the file's name
-
-    std::cout << "New file path post-chop: " << filepath << "\n";
 
     // Find the directory block id where the file resides
     int file_block = find_final_block(current_directory_block(), filepath);
@@ -166,6 +164,11 @@ FS::cat(std::string filepath)
     dir_entry blk[BLOCK_SIZE];
     disk.read(file_block, (uint8_t*)blk);
     dir_entry file_entry = blk[file_idx];
+
+    if((file_entry.access_rights & READ) == 0){
+        std::cout << "Invalid access rights, you do not have permission to read this file.\n";
+        return 1;
+    }
 
     // Make sure the file is not a directory
     if(file_entry.type == TYPE_DIR){
@@ -261,6 +264,11 @@ FS::cp(std::string sourcepath, std::string destpath)
     // Read current directory
     dir_entry blk[BLOCK_SIZE];
     disk.read(current_directory_block(), (uint8_t*)blk);
+
+    if((blk[source_file_id].access_rights & READ) == 0){
+        std::cout << "Invalid access rights, you do not have permission to read this file.\n";
+        return 1;
+    }
 
     // Make sure destination file does not exist
     int dest_file_id = file_exists(current_directory_block(), destpath);
@@ -373,6 +381,8 @@ FS::cp(std::string sourcepath, std::string destpath)
    return 0;
 }
 
+// TODO: File access rights for mv?
+
 // mv <sourcepath> <destpath> renames the file <sourcepath> to the name <destpath>,
 // or moves the file <sourcepath> to the directory <destpath> (if dest is a directory)
 int
@@ -475,6 +485,8 @@ FS::mv(std::string sourcepath, std::string destpath)
     return 0;
 }
 
+// TODO: File acess rights for rm?
+
 // rm <filepath> removes / deletes the file <filepath>
 int
 FS::rm(std::string filepath)
@@ -560,6 +572,17 @@ FS::append(std::string filepath1, std::string filepath2)
 
     dir_entry *entry_from = blk + file_1_id;
     dir_entry *entry_to = blk + file_2_id;
+
+    // Check access rights
+    if((entry_from->access_rights & READ) == 0){
+        std::cout << "Invalid access rights, you do not have permission to read \"" << entry_from->file_name << "\".\n";
+        return 1;
+    }
+
+    if((entry_to->access_rights & WRITE) == 0){
+        std::cout << "Invalid access rights, you do not have permission to write to \"" << entry_to->file_name << "\".\n";
+        return 1;
+    }
 
     int blk_from = entry_from->first_blk;       // The block we're reading from
     int blk_to = entry_to->first_blk;           // The block we're writing to
@@ -703,6 +726,8 @@ FS::mkdir(std::string dirpath)
     return 0;
 }
 
+// TODO: Maybe access rights? 
+
 // cd <dirpath> changes the current (working) directory to the directory named <dirpath>
 int
 FS::cd(std::string dirpath)
@@ -780,7 +805,7 @@ FS::chmod(std::string accessrights, std::string filepath)
     }
 
     // Make sure access rights are valid
-    int new_access_rights = std::stoid(accessrights);
+    int new_access_rights = std::stoi(accessrights);
     if(new_access_rights < 0 || new_access_rights > 7){
         std::cout << "Access rights are not valid\n";
         return 1;
