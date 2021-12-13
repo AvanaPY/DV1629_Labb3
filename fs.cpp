@@ -442,17 +442,17 @@ FS::mv(std::string sourcepath, std::string destpath)
         dir_entry new_blk[BLOCK_SIZE];
         disk.read(new_blk_id, (uint8_t*)new_blk);
 
+        // If a file with the same name as source already exists in the destination sub-directory, abort
+        std::cout << "Source path: " << sourcepath << "\n";
+        if(file_exists(new_blk_id, sourcepath) != -1){
+            std::cout << "File \"" << destpath.c_str() << "\" already exists.\n";
+            return 1;
+        }
+
         // If the destination sub-directory block is the same as current directory, we don't have to do anything
         if(new_blk_id == current_directory_block()){
             std::cout << "Destination sub-directory is the same directory as the current one.\n";
             return 0;
-        }
-
-        // If a file with the same name as source already exists in the destination sub-directory, abort
-        std::cout << "Source path: " << sourcepath << "\n";
-        if(file_exists(new_blk_id, sourcepath) != -1){
-            std::cout << "File with name " << sourcepath << " already exists in destination sub-directory, aborting\n";
-            return 1;
         }
         
         // Find an empty dir_entry in destination sub-directory
@@ -584,6 +584,12 @@ FS::append(std::string filepath1, std::string filepath2)
         return 1;
     }
 
+    if((entry_to->access_rights & READ) == 0){
+        std::cout << "Invalid access rights, you do not have permission to read \"" << entry_to->file_name << "\".\n";
+        return 1;
+    }
+
+
     int blk_from = entry_from->first_blk;       // The block we're reading from
     int blk_to = entry_to->first_blk;           // The block we're writing to
     while(fat[blk_to] != FAT_EOF){ blk_to = fat[blk_to]; } // Set the writing-to-block block to the last block of the file we're writing to
@@ -609,7 +615,6 @@ FS::append(std::string filepath1, std::string filepath2)
     }
 
     while(bytes_to_append > 0){             // While there's data to write
-        std::cout << "Start of loop..." << bytes_to_append << " | " << buf_end_pos << "\n";
         if(buf_end_pos >= BLOCK_SIZE){
             disk.write(blk_to, buf);        // Write the data to the block
             fat[blk_to] = FAT_EOF;          // ... and mark the FAT entry as EOF
@@ -653,13 +658,15 @@ FS::append(std::string filepath1, std::string filepath2)
     return 0;
 }
 
+// TODO: Klaga för att deras test kommando inte kommer överens med hur de vill att mkdir ska fungera
+// plus så e test_commands.txt filen super dålig
+
 // mkdir <dirpath> creates a new sub-directory with the name <dirpath>
 // in the current directory
 int
 FS::mkdir(std::string dirpath)
 {
     if(file_exists(current_directory_block(), dirpath) != -1){
-        std::cout << "wtf\n";
         std::cout << "A directory with name " << dirpath << " already exists.\n";
         return 1;
     }
