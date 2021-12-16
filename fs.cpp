@@ -60,8 +60,18 @@ FS::create(std::string filepath)
         std::cout << "Filename too long. The name of a file can be at most be 56 characters long\n";
         return 1;
     }
-    if(file_exists(current_directory_block(), filepath) != -1){
-      std::cout << "File \"" << filepath << "\" already exists.\n";
+
+    // Get the file name
+    std::string filename;
+    get_file_name_from_path(filepath, &filename);
+
+    // Find with directory block to load
+    chop_file_name(&filepath);
+    int dir_blk = find_final_block(current_directory_block(), filepath);
+
+    // Check if the file already exists on the dir block
+    if(file_exists(dir_blk, filename) != -1){
+      std::cout << "File \"" << filename << "\" already exists.\n";
       return 1;
     }
 
@@ -111,14 +121,6 @@ FS::create(std::string filepath)
         previous_block = block;
     }
 
-    // Get the file name
-    std::string filename;
-    get_file_name_from_path(filepath, &filename);
-
-    // Find with directory block to load
-    chop_file_name(&filepath);
-    int dir_blk = find_final_block(current_directory_block(), filepath);
-
     // UPDATE DIRECTORY DATA
 
     // Load current directory entries
@@ -153,7 +155,7 @@ FS::cat(std::string filepath)
 
     // If we cannot calculate which block the filepath leads to, something's wrong
     if(file_block == -1){
-        std::cout << "File " << filename.c_str() << " does not exist.\n";
+        std::cout << "File \"" << filename << "\" does not exist.\n";
         return -1;
     }
 
@@ -184,11 +186,9 @@ FS::cat(std::string filepath)
     char *cblk = (char*)blk;
     int block = file_entry.first_blk;
     while(block != FAT_EOF){
-
         disk.read(block, (uint8_t*)cblk);
-        std::string s = std::string(cblk);
         block = fat[block];
-        std::cout << s;
+        std::cout << cblk;
     }
     std::cout << "\n"; // New line for good luck
 
