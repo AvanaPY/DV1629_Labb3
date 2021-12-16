@@ -39,8 +39,8 @@ FS::format()
 
         blk[i].size = 0;
         blk[i].first_blk = 0;
-        blk[i].type = TYPE_FILE;
-        blk[i].access_rights = READ | WRITE | EXECUTE;
+        blk[i].type = 0;
+        blk[i].access_rights = 0;
     }
 
     // Write data to disk
