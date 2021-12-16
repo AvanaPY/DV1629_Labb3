@@ -111,23 +111,31 @@ FS::create(std::string filepath)
         previous_block = block;
     }
 
+    // Get the file name
+    std::string filename;
+    get_file_name_from_path(filepath, &filename);
+
+    // Find with directory block to load
+    chop_file_name(&filepath);
+    int dir_blk = find_final_block(current_directory_block(), filepath);
+
     // UPDATE DIRECTORY DATA
 
     // Load current directory entries
     dir_entry blk[BLOCK_SIZE];
-    disk.read(current_directory_block(), (uint8_t*)blk);
+    disk.read(dir_blk, (uint8_t*)blk);
 
     // Find an empty entry to populate
     int empty_entry_id = find_empty_dir_entry_id(blk);
     dir_entry *empty_entry = blk + empty_entry_id;
 
-    strcpy(empty_entry->file_name, filepath.c_str());
+    strcpy(empty_entry->file_name, filename.c_str());
     empty_entry->size           = (uint32_t)(accum.length() + 1);
     empty_entry->first_blk      = first_block;
     empty_entry->type           = TYPE_FILE;
     empty_entry->access_rights  = READ | WRITE;
 
-    disk.write(current_directory_block(), (uint8_t*)blk);
+    disk.write(dir_blk, (uint8_t*)blk);
     disk.write(FAT_BLOCK, (uint8_t*)fat);
     return 0;
 }
