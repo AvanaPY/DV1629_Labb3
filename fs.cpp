@@ -254,26 +254,32 @@ FS::ls()
 int
 FS::cp(std::string sourcepath, std::string destpath)
 {
+    // Get the source's file name from the sourcepath
+    std::string source_filename;
+    get_file_name_from_path(sourcepath, &source_filename);
+
+    chop_file_name(&sourcepath);
+    int source_blk = find_final_block(current_directory_block(), sourcepath);
+
     // Make sure the source file exists
-    int source_file_id = file_exists(current_directory_block(), sourcepath);
+    int source_file_id = file_exists(source_blk, source_filename);
     if(source_file_id == -1){
-      std::cout << "File \"" << sourcepath << "\" does not exist.\n";
+      std::cout << "File \"" << source_filename << "\" does not exist.\n";
       return 1;
     }
     
-    // Read current directory
+    // Read source directory
     dir_entry blk[BLOCK_SIZE];
-    disk.read(current_directory_block(), (uint8_t*)blk);
+    disk.read(source_blk, (uint8_t*)blk);
+    dir_entry* source_file_entry = blk + source_file_id;
 
-    if((blk[source_file_id].access_rights & READ) == 0){
+    if((source_file_entry->access_rights & READ) == 0){
         std::cout << "Invalid access rights, you do not have permission to read this file.\n";
         return 1;
     }
 
-    // Make sure destination file does not exist
-    int dest_file_id = file_exists(current_directory_block(), destpath);
 
-    std::string copied_file_name;   // Final name of the new copied file
+    std::string copied_filename;   // Final name of the new copied file
     int dest_blk_id = -1;           // Block number of the directory we're copying to
    
     // The following if-else case determines the file name of the new file
@@ -288,16 +294,24 @@ FS::cp(std::string sourcepath, std::string destpath)
             return 1;
         }
 
-        if(dest_blk_id == current_directory_block()){                              
-            std::cout << "Destination sub-directory is the same directory as the current one.\n";
+        if(dest_blk_id == source_blk){                              
+            std::cout << "Destination sub-directory is the same directory as the source directory.\n";
             return 1;
         }
-        copied_file_name = sourcepath; //... so we put the name of the new file to the same name as source file
+        copied_filename = source_filename; //... so we put the name of the new file to the same name as source file
     } else {                                                                    
         // If the destpath does not include any "/" then we know we're just copying to the current directory
+        
+        // What the destination's block number is (NOTE IF THIS IS NOT -1 THEN <destpath> IS A DIRECTORY YAY)
+        int destpath_blk_num = find_final_block(current_directory_block(), destpath);
 
-        if(dest_file_id != -1){
-            dir_entry* dest_file_entry = blk + dest_file_id;
+        // If the destination file exists
+        int dest_file_exist = file_exists(destpath_blk_num, destpath);
+        if(dest_file_exist != -1){                    // if dest_file_exist  is not -1 then a file that is called <destpath> in current directory
+
+            dir_entry dest_blk[BLOCK_SIZE];
+            disk.read(destpath_blk_num, (uint8_t*)dest_blk);
+            dir_entry* dest_file_entry = dest_blk + dest_file_exist;
 
             // If our destination file exists and is a file, abort
             if(dest_file_entry->type == TYPE_FILE){
@@ -307,25 +321,33 @@ FS::cp(std::string sourcepath, std::string destpath)
 
             // Else destination file is a directory 
             // Copy the file to the new directory with name sourcepath
-            get_file_name_from_path(sourcepath, &copied_file_name);
-            dest_blk_id = dest_file_entry->first_blk;
+            copied_filename = source_filename;
+            dest_blk_id = destpath_blk_num;
 
         } else {
+            
+            if(destpath_blk_num != -1){     // If there is a directory in source directory called <destpath>...
 
-            // If our destination file does not exist
-            //  - Copy the file to current directory with name destpath
-            get_file_name_from_path(destpath, &copied_file_name);
-            dest_blk_id = current_directory_block();
+                // Name of new file is same as source file
+                copied_filename = source_filename;
+                dest_blk_id = destpath_blk_num;
+
+            } else {                        // If there is no directory in source directory called <destpath>...             
+
+                // Name of new file is just <destpath> and destination block is source block                            
+                copied_filename = destpath;
+                dest_blk_id = source_blk;
+            }
         }
-
     }
-    
-    if(file_exists(dest_blk_id, copied_file_name) != -1){
-        std::cout << "File with name " << copied_file_name << " already exists in destination sub-directory, aborting\n";
+
+    if(file_exists(dest_blk_id, copied_filename) != -1){
+        std::cout << "file_exists(" << dest_blk_id << ", " << copied_filename << ") != -1\n";
+        std::cout << "File with name " << copied_filename << " already exists in destination sub-directory, aborting\n";
         return 1;
     }
 
-    std::cout << "New file name: " << copied_file_name << "\n";
+    std::cout << "New file name: " << copied_filename << "\n";
 
     // Load destination directory
     dir_entry dest_blk[BLOCK_SIZE];
@@ -339,7 +361,7 @@ FS::cp(std::string sourcepath, std::string destpath)
 
     // Update the free entry in destination directory with the new information
     dir_entry *dest_entry = dest_blk + free_entry_id;
-    strcpy(dest_entry->file_name, copied_file_name.c_str());
+    strcpy(dest_entry->file_name, copied_filename.c_str());
     dest_entry->size = blk[source_file_id].size;
     dest_entry->type = blk[source_file_id].type;
     dest_entry->access_rights = blk[source_file_id].access_rights;
