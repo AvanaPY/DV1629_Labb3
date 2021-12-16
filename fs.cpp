@@ -273,6 +273,11 @@ FS::cp(std::string sourcepath, std::string destpath)
     disk.read(source_blk, (uint8_t*)blk);
     dir_entry* source_file_entry = blk + source_file_id;
 
+
+    if(source_file_entry->type == TYPE_DIR){
+        std::cout << "Cannot copy directory\n";
+        return 1;
+    }
     if((source_file_entry->access_rights & READ) == 0){
         std::cout << "Invalid access rights, you do not have permission to read this file.\n";
         return 1;
@@ -306,8 +311,10 @@ FS::cp(std::string sourcepath, std::string destpath)
         int destpath_blk_num = find_final_block(current_directory_block(), destpath);
 
         // If the destination file exists
-        int dest_file_exist = file_exists(destpath_blk_num, destpath);
-        if(dest_file_exist != -1){                    // if dest_file_exist  is not -1 then a file that is called <destpath> in current directory
+        if(destpath_blk_num == -1){                 // If <destpath_blk_num> deos not exist, then we are simply creating a new file
+                                                    // with the same contents as <sourcefile>   
+
+            int dest_file_exist = file_exists(destpath_blk_num, destpath);
 
             dir_entry dest_blk[BLOCK_SIZE];
             disk.read(destpath_blk_num, (uint8_t*)dest_blk);
