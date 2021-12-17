@@ -412,16 +412,24 @@ FS::cp(std::string sourcepath, std::string destpath)
 int
 FS::mv(std::string sourcepath, std::string destpath)
 {
+
+    std::string source_filename;
+    get_file_name_from_path(sourcepath, &source_filename);
+
+    chop_file_name(&sourcepath);
+
+    int source_directory = find_final_block(current_directory_block(), sourcepath);
+
     // Make sure the source file exists
-    int file_index = file_exists(current_directory_block(), sourcepath);
+    int file_index = file_exists(source_directory, source_filename);
     if(file_index == -1){
-        std::cout << "File \"" << sourcepath << "\" does not exist.\n";
+        std::cout << "File \"" << source_filename << "\" does not exist.\n";
         return 1;
     }
 
     // Load the current directory
     dir_entry blk[BLOCK_SIZE];
-    disk.read(current_directory_block(), (uint8_t*)blk);
+    disk.read(source_directory, (uint8_t*)blk);
 
     // Check if the source file is a directory, we don't want to move directories around
     dir_entry* source_file = blk + file_index;
@@ -515,16 +523,24 @@ FS::mv(std::string sourcepath, std::string destpath)
 int
 FS::rm(std::string filepath)
 {
+
+    std::string filename;
+    get_file_name_from_path(filepath, &filename);
+
+    chop_file_name(&filepath);
+
+    int source_directory = find_final_block(current_directory_block(), filepath);
+
     // Make sure the file exists
-    int file_index = file_exists(current_directory_block(), filepath);
+    int file_index = file_exists(source_directory, filename);
     if(file_index == -1){
-        std::cout << "File " << filepath << " does not exist.\n";
+        std::cout << "File " << filename << " does not exist.\n";
         return 1;
     }
     
     // Load the root directory
     dir_entry blk[BLOCK_SIZE];
-    disk.read(current_directory_block(), (uint8_t*)blk);
+    disk.read(source_directory, (uint8_t*)blk);
     
     // Grab a pointer to the file's dir_entry
     dir_entry *file_entry = blk + file_index;
@@ -543,7 +559,7 @@ FS::rm(std::string filepath)
         file_entry->size = 0;
 
 
-        std::cout << "Successfully removed file " << filepath << "\n";
+        std::cout << "Successfully removed file " << filename << "\n";
     } 
     else { // If we're working with a directory
 
@@ -565,9 +581,9 @@ FS::rm(std::string filepath)
         file_entry->first_blk = 0;
         file_entry->size = 0;
 
-        std::cout << "Successfully removed directory " << filepath << "\n";
+        std::cout << "Successfully removed directory " << filename << "\n";
     }
-    disk.write(current_directory_block(), (uint8_t*)blk);
+    disk.write(source_directory, (uint8_t*)blk);
     disk.write(FAT_BLOCK, (uint8_t*)fat);
 
     return 0;
@@ -578,24 +594,40 @@ FS::rm(std::string filepath)
 int
 FS::append(std::string filepath1, std::string filepath2)
 {
+    std::string filename1;
+    get_file_name_from_path(filepath1, &filename1);
+    chop_file_name(&filepath1);
+    int file_directory1 = find_final_block(current_directory_block(), filepath1);
+
     // Make sure both files exists
-    int file_1_id = file_exists(current_directory_block(), filepath1);
+    int file_1_id = file_exists(file_directory1, filename1);
     if(file_1_id == -1){
-        std::cout << "File " << filepath1 << " does not exist\n";
+        std::cout << "File " << filename1 << " does not exist\n";
         return 1;
     }
-    int file_2_id = file_exists(current_directory_block(), filepath2);
+
+    std::string filename2;
+    get_file_name_from_path(filepath2, &filename2);
+    chop_file_name(&filepath2);
+    int file_directory2 = find_final_block(current_directory_block(), filepath2);
+
+    int file_2_id = file_exists(file_directory2, filename2);
     if(file_2_id == -1){
         std::cout << "File " << filepath2 << " does not exist\n";
         return 1;
     }
 
-    // Load the root directory 
+    // Load the first directory 
     dir_entry blk[BLOCK_SIZE];
-    disk.read(current_directory_block(), (uint8_t*)blk);
+    disk.read(file_directory1, (uint8_t*)blk);
+
+    // Load the second directory
+
+    dir_entry sblk[BLOCK_SIZE];
+    disk.read(file_directory2, (uint8_t*)sblk);
 
     dir_entry *entry_from = blk + file_1_id;
-    dir_entry *entry_to = blk + file_2_id;
+    dir_entry *entry_to = sblk + file_2_id;
 
     // Check access rights
     if((entry_from->access_rights & READ) == 0){
@@ -675,7 +707,7 @@ FS::append(std::string filepath1, std::string filepath2)
 
     entry_to->size += entry_from->size; 
 
-    disk.write(current_directory_block(), (uint8_t*)blk);
+    disk.write(file_directory2, (uint8_t*)sblk);
     disk.write(FAT_BLOCK, (uint8_t*)fat);
 
     std::cout << "Successfully appended " << entry_from->file_name << " to the end of " << entry_to->file_name << "\n";
