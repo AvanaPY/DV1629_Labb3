@@ -398,8 +398,6 @@ FS::cp(std::string sourcepath, std::string destpath)
    return 0;
 }
 
-// TODO: File access rights for mv?
-
 // mv <sourcepath> <destpath> renames the file <sourcepath> to the name <destpath>,
 // or moves the file <sourcepath> to the directory <destpath> (if dest is a directory)
 int
@@ -510,8 +508,6 @@ FS::mv(std::string sourcepath, std::string destpath)
     } 
     return 0;
 }
-
-// TODO: File acess rights for rm?
 
 // rm <filepath> removes / deletes the file <filepath>
 int
