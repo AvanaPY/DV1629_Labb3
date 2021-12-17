@@ -332,19 +332,10 @@ FS::cp(std::string sourcepath, std::string destpath)
             copied_filename = source_filename;
             dest_blk_id = dest_file_entry->first_blk;
         } else {                                                // Else we check 
-            
-            int destpath_blk_num = find_final_block(current_directory_block(), destpath);
-            if(destpath_blk_num != -1){     // If there is a directory in source directory called <destpath>...
 
-                // Name of new file is same as source file
-                copied_filename = source_filename;
-                dest_blk_id = destpath_blk_num;
-            } else {                        // If there is no directory in source directory called <destpath>...             
-
-                // Name of new file is just <destpath> and destination block is source block                            
-                copied_filename = destpath;
-                dest_blk_id = source_blk;
-            }
+            // Name of new file is just <destpath> and destination block is source block                            
+            copied_filename = destpath;
+            dest_blk_id = source_blk;
         }
     }
 
