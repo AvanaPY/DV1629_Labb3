@@ -857,6 +857,12 @@ FS::pwd()
 int
 FS::chmod(std::string accessrights, std::string filepath)
 {
+    if(accessrights.at(0) < '0' || accessrights.at(0) > '7' ){
+        std::cout << "Invalid mode: " << accessrights << ".\n";
+        return 1;
+    }
+
+
     std::string file_name;
     get_file_name_from_path(filepath, &file_name);
 
