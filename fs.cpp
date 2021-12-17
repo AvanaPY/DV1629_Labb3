@@ -322,6 +322,11 @@ FS::cp(std::string sourcepath, std::string destpath)
             disk.read(current_directory_block(), (uint8_t*)dest_blk);
             dir_entry* dest_file_entry = dest_blk + dest_file_exist;
 
+            if(dest_file_entry->type == TYPE_FILE){
+                std::cout << "A file with name " << dest_file_entry->file_name << " already exists.\n";
+                return 1;
+            }
+
             // Else destination file is a directory 
             // Copy the file to the new directory with name sourcepath
             copied_filename = source_filename;
@@ -329,13 +334,11 @@ FS::cp(std::string sourcepath, std::string destpath)
         } else {                                                // Else we check 
             
             int destpath_blk_num = find_final_block(current_directory_block(), destpath);
-            std::cout << "find_final_block(" << current_directory_block() << ", " << destpath << ") -> " << destpath_blk_num << "\n";
             if(destpath_blk_num != -1){     // If there is a directory in source directory called <destpath>...
 
                 // Name of new file is same as source file
                 copied_filename = source_filename;
                 dest_blk_id = destpath_blk_num;
-                std::cout << "destpath_blk_num: " << destpath_blk_num << "\n";
             } else {                        // If there is no directory in source directory called <destpath>...             
 
                 // Name of new file is just <destpath> and destination block is source block                            
@@ -345,7 +348,6 @@ FS::cp(std::string sourcepath, std::string destpath)
         }
     }
 
-    std::cout << "file_exists(" << dest_blk_id << ", " << copied_filename << ") \n";
     if(file_exists(dest_blk_id, copied_filename) != -1){
         std::cout << "File with name " << copied_filename << " already exists in destination sub-directory, aborting\n";
         return 1;
@@ -412,6 +414,8 @@ FS::cp(std::string sourcepath, std::string destpath)
 int
 FS::mv(std::string sourcepath, std::string destpath)
 {
+    std::string org_sourcepath = sourcepath;
+    std::string org_destpath = destpath;
 
     std::string source_filename;
     get_file_name_from_path(sourcepath, &source_filename);
@@ -459,7 +463,7 @@ FS::mv(std::string sourcepath, std::string destpath)
         std::strcpy(file_entry->file_name, destpath.c_str());
 
         disk.write(current_directory_block(), (uint8_t*)blk);
-        std::cout << "Successfully renamed " << sourcepath << " to " << file_entry->file_name << "\n";
+        std::cout << "Successfully renamed " << org_sourcepath << " to " << file_entry->file_name << "\n";
     }
     else { // Else we're moving the file to a different directory 
 
@@ -475,7 +479,6 @@ FS::mv(std::string sourcepath, std::string destpath)
         disk.read(new_blk_id, (uint8_t*)new_blk);
 
         // If a file with the same name as source already exists in the destination sub-directory, abort
-        std::cout << "Source path: " << sourcepath << "\n";
         if(file_exists(new_blk_id, sourcepath) != -1){
             std::cout << "File \"" << destpath.c_str() << "\" already exists.\n";
             return 1;
@@ -512,7 +515,7 @@ FS::mv(std::string sourcepath, std::string destpath)
         // Write new data to disk
         disk.write(current_directory_block(), (uint8_t*)blk);
         disk.write(new_blk_id, (uint8_t*)new_blk);
-        std::cout << "Successfully moved " << sourcepath << " to " << destpath << "\n";
+        std::cout << "Successfully moved " << org_sourcepath << " to " << org_destpath << "\n";
     } 
     return 0;
 }
