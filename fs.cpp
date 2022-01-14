@@ -667,7 +667,7 @@ FS::append(std::string filepath1, std::string filepath2)
 
             // Shift data in buffer to the start
             // It would be more efficient to not do this but this works, might update in the future
-            // TODO: Improve 
+            // UPDATE FROM FUTURE: Did not update.
             for(int i = 0; i < BLOCK_SIZE; i++)
                 buf[i] = buf[BLOCK_SIZE + i];
             buf_end_pos -= BLOCK_SIZE;
@@ -682,7 +682,6 @@ FS::append(std::string filepath1, std::string filepath2)
                     buf_end_pos += (entry_from->size % BLOCK_SIZE);
                 else
                     buf_end_pos += BLOCK_SIZE;
-                
             }
             // Find an empty block and mark the FAT table to point correctly
             int blk_new = find_empty_block_id();
@@ -703,9 +702,6 @@ FS::append(std::string filepath1, std::string filepath2)
     std::cout << "Successfully appended " << entry_from->file_name << " to the end of " << entry_to->file_name << "\n";
     return 0;
 }
-
-// TODO: Klaga för att deras test kommando inte kommer överens med hur de vill att mkdir ska fungera
-// plus så e test_commands.txt filen super dålig
 
 // mkdir <dirpath> creates a new sub-directory with the name <dirpath>
 // in the current directory
@@ -741,45 +737,34 @@ FS::mkdir(std::string dirpath)
     entry->type = TYPE_DIR;
     entry->access_rights = WRITE | READ | EXECUTE;
 
-    // Update FAT 
-    fat[free_block] = FAT_EOF;
-
-    // Write our block
-    disk.write(current_directory_block(), (uint8_t*)blk);
-    disk.write(FAT_BLOCK, (uint8_t*)fat);
-    std::cout << "Successfully created directory " << entry->file_name << "\n";
-
     // Update the new directory's own block free_block
     // with our file ".." that points to the current block
 
+    // Revert the new directory to a "zero-state"
     dir_entry dir_blk[BLOCK_SIZE];
     disk.read(free_block, (uint8_t*)dir_blk);
-
     for(int i = 0; i < BLOCK_SIZE / sizeof(dir_entry); i++){
         dir_blk[i].first_blk = 0;
         dir_blk[i].size = 0;
     }
 
-    // Find a free entry in the current directory
-    int free_entry = find_empty_dir_entry_id(dir_blk);
-    if(free_entry == -1){
-        std::cout << "Could not create sub-folder \"..\": Not enough space on block.\n"; // This should never happen
-        return 1;
-    }
-
     // Create a ".." in the new directory that points to the current directory
-    dir_entry *parent_entry = dir_blk + free_entry;
+    dir_entry *parent_entry = dir_blk + 0;      // Explicit + 0 to indicate that the first dir_entry will be the ".." directory 
     strcpy(parent_entry->file_name, "..");
     parent_entry->size = 1;
     parent_entry->first_blk = blk_curr_dir;
     parent_entry->type = TYPE_DIR;
     parent_entry->access_rights = READ | WRITE | EXECUTE;
 
-    disk.write(free_block, (uint8_t*)dir_blk);
+    // Update FAT 
+    fat[free_block] = FAT_EOF;
+
+    disk.write(current_directory_block(), (uint8_t*)blk);   // Write the current directory block to the disk
+    disk.write(FAT_BLOCK, (uint8_t*)fat);                   // Update the FAT 
+    disk.write(free_block, (uint8_t*)dir_blk);              // Write the new directory block to the disk
+    std::cout << "Successfully created directory " << entry->file_name << "\n";
     return 0;
 }
-
-// TODO: Maybe access rights? 
 
 // cd <dirpath> changes the current (working) directory to the directory named <dirpath>
 int
@@ -803,39 +788,40 @@ FS::cd(std::string dirpath)
 int
 FS::pwd()
 {
-    std::string path;
     int blk_id = current_directory_block();
 
     if(blk_id == ROOT_BLOCK){
-        path = "/";
-    } else {
-        dir_entry blk[BLOCK_SIZE];
-        do {
-            disk.read(blk_id, (uint8_t*)blk);
-            // First entry in a non-root directory should always be the .. directory
-            dir_entry entry = blk[0];
+        std::cout << "/\n";
+        return 0;
+    } 
 
-            // Read the parent directory block
-            disk.read(entry.first_blk, (uint8_t*)blk);
+    std::string path;
+    dir_entry blk[BLOCK_SIZE];
+    do {
+        disk.read(blk_id, (uint8_t*)blk);
+        // First entry in a non-root directory should always be the .. directory
+        dir_entry entry = blk[0];
 
-            // Iterate over all dir entries in parent directory 
-            // and find which dir_entry points to the current block
-            // and insert the name of that dir_entry
-            for(int i = 0; i < BLOCK_SIZE / sizeof(dir_entry); i++){
-                if(!file_is_visible(blk + i))
-                    continue;
-                
-                if(blk[i].first_blk == blk_id)
-                    path.insert(0, blk[i].file_name);
-            }
+        // Read the parent directory block
+        disk.read(entry.first_blk, (uint8_t*)blk);
 
-            // Insert a "/" and update the current block to the parent's block
-            path.insert(0, "/");
-            blk_id = entry.first_blk;
-        } while(blk_id != ROOT_BLOCK);
-    }
+        // Iterate over all dir entries in parent directory 
+        // and find which dir_entry points to the current block
+        // and insert the name of that dir_entry
+        for(int i = 0; i < BLOCK_SIZE / sizeof(dir_entry); i++){
+            if(!file_is_visible(blk + i))
+                continue;
+            
+            if(blk[i].first_blk == blk_id)
+                path.insert(0, blk[i].file_name);
+        }
 
-    std::cout << path.c_str() << "\n";
+        // Insert a "/" and update the current block to the parent's block
+        path.insert(0, "/");
+        blk_id = entry.first_blk;
+    } while(blk_id != ROOT_BLOCK);
+    std::cout << path << "\n";
+    
     return 0;
 }
 
@@ -896,17 +882,6 @@ FS::file_exists(uint16_t directory_block, std::string filename)
         filename = filename.erase(0, 1);
         return file_exists(ROOT_BLOCK, filename);
     }
-
-    // We put this here at some point but don't really remember what it does
-    // but I have learned the hard way to not delete code, so it is just commented out
-    // Sitting here, waiting for the inevitable time where it is removed, or breaks our code.
-
-    // int slash = filename.find("/");
-    // if (slash != -1){
-    //     filename = filename.substr(0, slash); // If there is a slash indicating a full path, 
-    //                                           // only pick the first one
-    //                                           // i.e dir/dir2 -> dir
-    // }
 
     dir_entry blk[BLOCK_SIZE];
     disk.read(directory_block, (uint8_t*)blk);
