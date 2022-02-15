@@ -708,13 +708,21 @@ FS::append(std::string filepath1, std::string filepath2)
 int
 FS::mkdir(std::string dirpath)
 {
-    if(file_exists(current_directory_block(), dirpath) != -1){
+
+    int directory_blk = current_directory_block();
+
+    if(dirpath.at(0) == '/')
+    {
+        dirpath.erase(0, 1);
+        directory_blk = ROOT_BLOCK;
+    }
+    else if(file_exists(directory_blk, dirpath) != -1){
         std::cout << "A directory with name " << dirpath << " already exists.\n";
         return 1;
     }
     // Load the current directory directory
     dir_entry blk[BLOCK_SIZE];
-    disk.read(current_directory_block(), (uint8_t*)blk);
+    disk.read(directory_blk, (uint8_t*)blk);
 
     int entry_id = find_empty_dir_entry_id(blk);
     if(entry_id == -1){
@@ -759,7 +767,7 @@ FS::mkdir(std::string dirpath)
     // Update FAT 
     fat[free_block] = FAT_EOF;
 
-    disk.write(current_directory_block(), (uint8_t*)blk);   // Write the current directory block to the disk
+    disk.write(directory_blk, (uint8_t*)blk);   // Write the current directory block to the disk
     disk.write(FAT_BLOCK, (uint8_t*)fat);                   // Update the FAT 
     disk.write(free_block, (uint8_t*)dir_blk);              // Write the new directory block to the disk
     std::cout << "Successfully created directory " << entry->file_name << "\n";

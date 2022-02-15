@@ -16,4 +16,4 @@ disk.o: disk.cpp disk.h
 	$(GCC) -std=c++11 -O2 -c disk.cpp
 
 clean:
-	rm filesystem main.o shell.o fs.o disk.o
+	rm -f filesystem main.o shell.o fs.o disk.o
