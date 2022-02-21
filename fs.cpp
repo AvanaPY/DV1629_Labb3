@@ -709,17 +709,16 @@ int
 FS::mkdir(std::string dirpath)
 {
 
-    int directory_blk = current_directory_block();
+    std::string catname;
+    get_file_name_from_path(dirpath, &catname);
+    chop_file_name(&dirpath);
+    int directory_blk = find_final_block(current_directory_block(), dirpath);
 
-    if(dirpath.at(0) == '/')
-    {
-        dirpath.erase(0, 1);
-        directory_blk = ROOT_BLOCK;
+    if(directory_blk == -1){
+        std::cout << "Path does not exist\n";
+        return -1;
     }
-    else if(file_exists(directory_blk, dirpath) != -1){
-        std::cout << "A directory with name " << dirpath << " already exists.\n";
-        return 1;
-    }
+    
     // Load the current directory directory
     dir_entry blk[BLOCK_SIZE];
     disk.read(directory_blk, (uint8_t*)blk);
@@ -739,7 +738,7 @@ FS::mkdir(std::string dirpath)
     // Create directory entry
     dir_entry *entry = blk + entry_id;
 
-    strcpy(entry->file_name, dirpath.c_str());
+    strcpy(entry->file_name, catname.c_str());
     entry->size = 1;
     entry->first_blk = free_block;
     entry->type = TYPE_DIR;
@@ -760,7 +759,7 @@ FS::mkdir(std::string dirpath)
     dir_entry *parent_entry = dir_blk + 0;      // Explicit + 0 to indicate that the first dir_entry will be the ".." directory 
     strcpy(parent_entry->file_name, "..");
     parent_entry->size = 1;
-    parent_entry->first_blk = blk_curr_dir;
+    parent_entry->first_blk = directory_blk;
     parent_entry->type = TYPE_DIR;
     parent_entry->access_rights = READ | WRITE | EXECUTE;
 
