@@ -708,13 +708,20 @@ FS::append(std::string filepath1, std::string filepath2)
 int
 FS::mkdir(std::string dirpath)
 {
-    if(file_exists(current_directory_block(), dirpath) != -1){
-        std::cout << "A directory with name " << dirpath << " already exists.\n";
-        return 1;
+
+    std::string catname;
+    get_file_name_from_path(dirpath, &catname);
+    chop_file_name(&dirpath);
+    int directory_blk = find_final_block(current_directory_block(), dirpath);
+
+    if(directory_blk == -1){
+        std::cout << "Path does not exist\n";
+        return -1;
     }
+    
     // Load the current directory directory
     dir_entry blk[BLOCK_SIZE];
-    disk.read(current_directory_block(), (uint8_t*)blk);
+    disk.read(directory_blk, (uint8_t*)blk);
 
     int entry_id = find_empty_dir_entry_id(blk);
     if(entry_id == -1){
@@ -731,7 +738,7 @@ FS::mkdir(std::string dirpath)
     // Create directory entry
     dir_entry *entry = blk + entry_id;
 
-    strcpy(entry->file_name, dirpath.c_str());
+    strcpy(entry->file_name, catname.c_str());
     entry->size = 1;
     entry->first_blk = free_block;
     entry->type = TYPE_DIR;
@@ -752,14 +759,14 @@ FS::mkdir(std::string dirpath)
     dir_entry *parent_entry = dir_blk + 0;      // Explicit + 0 to indicate that the first dir_entry will be the ".." directory 
     strcpy(parent_entry->file_name, "..");
     parent_entry->size = 1;
-    parent_entry->first_blk = blk_curr_dir;
+    parent_entry->first_blk = directory_blk;
     parent_entry->type = TYPE_DIR;
     parent_entry->access_rights = READ | WRITE | EXECUTE;
 
     // Update FAT 
     fat[free_block] = FAT_EOF;
 
-    disk.write(current_directory_block(), (uint8_t*)blk);   // Write the current directory block to the disk
+    disk.write(directory_blk, (uint8_t*)blk);   // Write the current directory block to the disk
     disk.write(FAT_BLOCK, (uint8_t*)fat);                   // Update the FAT 
     disk.write(free_block, (uint8_t*)dir_blk);              // Write the new directory block to the disk
     std::cout << "Successfully created directory " << entry->file_name << "\n";
